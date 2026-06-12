@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wajz
+      POSTGRES_PASSWORD: wajz
+      POSTGRES_DB: wajz
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wajz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg2://wajz:wajz@db:5432/wajz
+      AUTH_MODE: ${AUTH_MODE:-dev}
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me-admin}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://wajz:wajz@db:5432/wajz
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      INGESTION_INTERVAL_MINUTES: ${INGESTION_INTERVAL_MINUTES:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
