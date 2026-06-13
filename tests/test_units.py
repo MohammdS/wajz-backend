@@ -8,6 +8,7 @@ from app.services.ai.heuristic_provider import (
 )
 from app.services.cleaning import clean_text
 from app.services.clustering import cosine_similarity, entity_overlap, tokenize
+from app.services.safe_fetch import validate_public_url
 
 
 def test_clean_text_strips_html_and_boilerplate():
@@ -75,3 +76,17 @@ def test_heuristic_analysis_is_grounded():
     # Heuristic mode must never invent interpretation
     assert analysis.why_it_matters == ""
     assert all("percent" in fact or any(ch.isdigit() for ch in fact) for fact in analysis.key_facts)
+
+
+def test_safe_fetch_blocks_internal_urls():
+    import pytest
+
+    for url in (
+        "http://localhost/article",
+        "http://127.0.0.1/article",
+        "http://169.254.169.254/latest/meta-data/",
+        "file:///etc/passwd",
+        "ftp://example.com/article",
+    ):
+        with pytest.raises(ValueError):
+            validate_public_url(url)

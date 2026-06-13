@@ -10,9 +10,11 @@ import sys
 from datetime import timedelta
 
 from app.database import Base, SessionLocal, engine
-from app.models import Article, Source, utcnow
+from app.models import Article, Source, Story, StoryArticle, utcnow
+from app.services.ai.base import StorySynthesis
 from app.services.cleaning import clean_text
 from app.services.pipeline import process_pending_articles
+from app.services.translations import upsert_translation
 
 TRUSTED_SOURCES = [
     {
@@ -171,6 +173,102 @@ DEMO_ARTICLES = [
     },
 ]
 
+DEMO_ARABIC_TRANSLATIONS = {
+    "eu-ai-rules": StorySynthesis(
+        headline="الاتحاد الأوروبي يقترح قواعد شفافية أشد لأنظمة الذكاء الاصطناعي",
+        summary=(
+            "اقترحت المفوضية الأوروبية إلزام مطوري نماذج الذكاء الاصطناعي الكبرى "
+            "بالكشف عن اختبارات السلامة ومصادر بيانات التدريب. وما زال المقترح بحاجة "
+            "إلى نقاش وتصويت في البرلمان الأوروبي."
+        ),
+        what_happened=(
+            "كشفت المفوضية الأوروبية عن مسودة قواعد تستهدف أقوى نماذج الذكاء "
+            "الاصطناعي وتفرض متطلبات إضافية للشفافية والسلامة."
+        ),
+        why_it_matters=(
+            "قد تحدد القواعد مستوى المساءلة المطلوب من شركات الذكاء الاصطناعي "
+            "الكبرى العاملة في أوروبا."
+        ),
+        key_facts=[
+            "تشمل المسودة الإفصاح عن تقييمات السلامة وملخصات بيانات التدريب.",
+            "تستهدف القواعد النماذج التي تتجاوز حداً معيناً من القدرة الحاسوبية.",
+            "انتقدت شركات تقنية تكاليف الامتثال والجدول الزمني المقترح.",
+        ],
+        unclear_points=[
+            "قد تتغير الصياغة النهائية خلال مناقشات البرلمان الأوروبي.",
+        ],
+        source_comparison=[
+            {"source": "BBC News", "framing": "ركزت على المساءلة ومخاوف تباطؤ الابتكار."},
+            {"source": "The Verge", "framing": "ركزت على بيانات التدريب والغرامات المحتملة."},
+            {"source": "The Guardian", "framing": "ركزت على تقييمات السلامة وتكاليف الامتثال."},
+        ],
+    ),
+    "markets-rates": StorySynthesis(
+        headline="استقرار الأسواق مع إبقاء البنوك المركزية أسعار الفائدة دون تغيير",
+        summary=(
+            "استقرت أسواق الأسهم عموماً بعد أن أبقت البنوك المركزية في الولايات "
+            "المتحدة وأوروبا أسعار الفائدة دون تغيير."
+        ),
+        what_happened=(
+            "أبقى الاحتياطي الفيدرالي وبنوك مركزية أوروبية أسعار الفائدة ثابتة، "
+            "بينما انخفضت عوائد السندات بشكل طفيف."
+        ),
+        why_it_matters="تؤثر قرارات الفائدة في الاقتراض والاستثمار والأسواق المالية.",
+        key_facts=[
+            "قال الاحتياطي الفيدرالي إن التضخم يواصل التراجع نحو هدف 2 بالمئة.",
+            "يتوقع محللون خفضاً واحداً للفائدة في وقت لاحق من العام.",
+        ],
+    ),
+    "exoplanet-water": StorySynthesis(
+        headline="رصد بخار ماء في الغلاف الجوي لكوكب بعيد",
+        summary=(
+            "أعلن علماء يستخدمون تلسكوب جيمس ويب رصد بخار ماء في غلاف كوكب "
+            "خارج المجموعة الشمسية يبعد 120 سنة ضوئية."
+        ),
+        what_happened=(
+            "رصد الباحثون بخار ماء على كوكب يقع ضمن المنطقة الصالحة للحياة حول نجمه."
+        ),
+        why_it_matters="تساعد الملاحظة العلماء على دراسة أغلفة الكواكب البعيدة.",
+        key_facts=[
+            "يبعد الكوكب نحو 120 سنة ضوئية.",
+            "يبلغ حجمه نحو ضعفي حجم الأرض.",
+            "حذر الباحثون من أن وجود بخار الماء لا يعني وجود حياة.",
+        ],
+    ),
+    "regional-summit": StorySynthesis(
+        headline="قادة إقليميون يبحثون التعاون الاقتصادي وأمن المياه",
+        summary=(
+            "اجتمع قادة من الشرق الأوسط في عمّان لقمة تستمر يومين وتركز على "
+            "التجارة الإقليمية وأمن المياه."
+        ),
+        what_happened=(
+            "ناقش المشاركون ممراً للسكك الحديدية ومشروعات طاقة عابرة للحدود."
+        ),
+        why_it_matters="قد تعزز الاتفاقات المحتملة الترابط الاقتصادي بين دول المنطقة.",
+        key_facts=[
+            "تستمر القمة يومين في عمّان.",
+            "يتوقع توقيع اتفاقات لمشروعات طاقة عابرة للحدود.",
+        ],
+    ),
+    "tech-hiring": StorySynthesis(
+        headline="تقرير: تعافي التوظيف في قطاع التكنولوجيا خلال الربع الأول",
+        summary=(
+            "أظهر تقرير نمو التوظيف في قطاع التكنولوجيا 8 بالمئة خلال الربع الأول "
+            "مقارنة بالعام السابق، مع تركّز الوظائف في الأمن السيبراني والذكاء الاصطناعي."
+        ),
+        what_happened=(
+            "سجل التقرير 12,400 وظيفة جديدة وارتفاع تمويل الشركات الناشئة إلى "
+            "2.1 مليار دولار."
+        ),
+        why_it_matters="قد يشير التعافي إلى عودة ثقة المستثمرين في القطاع.",
+        key_facts=[
+            "نما التوظيف 8 بالمئة مقارنة بالعام السابق.",
+            "سجل التقرير 12,400 وظيفة جديدة.",
+            "بلغ تمويل الشركات الناشئة 2.1 مليار دولار.",
+        ],
+    ),
+}
+
 
 def seed_sources(db) -> None:
     for spec in TRUSTED_SOURCES:
@@ -203,7 +301,45 @@ def seed_demo(db) -> None:
     db.commit()
     print(f"Demo articles added: {added}")
     result = process_pending_articles(db)
+    # Demo fixtures are reviewed content. Live pipeline output remains
+    # pending_review until an editor explicitly publishes it.
+    for story in db.query(Story).all():
+        story.status = "published"
+        story.published_at = utcnow()
+    db.commit()
+    seed_demo_translations(db)
     print(f"Pipeline: {result}")
+
+
+def seed_demo_translations(db) -> None:
+    articles = db.query(Article).filter(Article.url.like("https://demo.wajz.app/%")).all()
+    translated_story_ids: set[str] = set()
+    for article in articles:
+        key = next(
+            (candidate for candidate in DEMO_ARABIC_TRANSLATIONS if candidate in article.url),
+            None,
+        )
+        if key is None:
+            continue
+        link = (
+            db.query(StoryArticle)
+            .filter(StoryArticle.article_id == article.id)
+            .first()
+        )
+        if link is None:
+            continue
+        story = link.story
+        if story.id in translated_story_ids:
+            continue
+        upsert_translation(
+            db,
+            story,
+            "ar",
+            DEMO_ARABIC_TRANSLATIONS[key],
+            "reviewed-demo",
+        )
+        translated_story_ids.add(story.id)
+    db.commit()
 
 
 def main() -> None:

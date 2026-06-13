@@ -46,7 +46,7 @@ def _entry_image(entry) -> str | None:
     return None
 
 
-def ingest_source(db: Session, source: Source) -> int:
+def ingest_source(db: Session, source: Source, run_id: str | None = None) -> int:
     """Fetch a single source's feed. Returns the number of new articles stored."""
     response = httpx.get(
         source.rss_url,
@@ -77,9 +77,15 @@ def ingest_source(db: Session, source: Source) -> int:
             cleaned_text=clean_text(raw),
             image_url=_entry_image(entry),
             processing_status="pending",
+            status="collected",
+            ingestion_run_id=run_id,
         )
         db.add(article)
         new_count += 1
+    db.commit()
+    source.last_successful_fetch = utcnow()
+    source.failure_count = 0
+    source.last_error = None
     db.commit()
     return new_count
 
@@ -96,22 +102,24 @@ def run_ingestion(db: Session) -> IngestionRun:
 
     for source in sources:
         try:
-            fetched = ingest_source(db, source)
+            fetched = ingest_source(db, source, run.id)
             run.articles_fetched += fetched
             logger.info("Ingested %s new articles from %s", fetched, source.name)
         except Exception as exc:  # noqa: BLE001 - one bad feed must not kill the run
             db.rollback()
             run.sources_failed += 1
+            source.failure_count += 1
+            source.last_error = str(exc)[:2000]
             errors.append(f"{source.name}: {exc}")
             logger.warning("Failed to ingest %s: %s", source.name, exc)
 
     run.completed_at = utcnow()
     if run.sources_failed == 0:
-        run.status = "success"
+        run.status = "succeeded"
     elif run.sources_failed < run.sources_total:
         run.status = "partial"
     else:
-        run.status = "error"
+        run.status = "failed"
     run.error_message = "; ".join(errors)[:2000] or None
     db.commit()
     return run

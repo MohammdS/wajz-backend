@@ -24,7 +24,7 @@ REGIONS = [
     "Technology Global",
 ]
 
-LANGUAGES = ["en", "ar", "he"]
+LANGUAGES = ["en", "ar"]
 BRIEFING_LENGTHS = ["5_minutes", "10_minutes", "20_minutes"]
 EXPLANATION_LEVELS = ["brief", "standard", "beginner_friendly"]
 NOTIFICATION_PREFERENCES = [
@@ -75,6 +75,7 @@ class PreferencesIn(BaseModel):
     briefing_length: str = Field(default="10_minutes")
     explanation_level: str = Field(default="standard")
     notification_preference: str = Field(default="daily_morning")
+    onboarding_completed: bool = False
 
 
 class PreferencesOut(PreferencesIn):
@@ -144,6 +145,7 @@ class StoryListItem(BaseModel):
     image_url: str | None = None
     last_updated_at: datetime
     saved: bool = False
+    content_language: str
 
 
 class StoryDetail(BaseModel):
@@ -163,6 +165,7 @@ class StoryDetail(BaseModel):
     source_comparison: list[SourceComparisonItem]
     last_updated_at: datetime
     saved: bool = False
+    content_language: str
 
 
 class StoryListResponse(BaseModel):

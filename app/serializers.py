@@ -10,6 +10,7 @@ from app.schemas import (
     StoryListItem,
     StorySourceLink,
 )
+from app.services.translations import get_story_translation
 
 
 def _story_articles(db: Session, story: Story) -> list[tuple[Article, Source | None]]:
@@ -32,8 +33,14 @@ def saved_story_ids(db: Session, user: User | None) -> set[str]:
 
 
 def story_to_list_item(
-    db: Session, story: Story, saved_ids: set[str] | None = None
+    db: Session,
+    story: Story,
+    saved_ids: set[str] | None = None,
+    language: str | None = None,
 ) -> StoryListItem:
+    translation = get_story_translation(db, story, language)
+    headline = translation.headline if translation else story.headline
+    summary = translation.summary if translation else story.summary
     pairs = _story_articles(db, story)
     source_names: list[str] = []
     image_url = None
@@ -45,8 +52,8 @@ def story_to_list_item(
             image_url = article.image_url
     return StoryListItem(
         id=story.id,
-        headline=story.headline,
-        summary=story.summary,
+        headline=headline,
+        summary=summary,
         category=story.category,
         region=story.region,
         confidence_label=story.confidence_label,
@@ -56,10 +63,17 @@ def story_to_list_item(
         image_url=image_url,
         last_updated_at=story.last_updated_at,
         saved=story.id in (saved_ids or set()),
+        content_language=translation.language if translation else story.language,
     )
 
 
-def story_to_detail(db: Session, story: Story, saved_ids: set[str] | None = None) -> StoryDetail:
+def story_to_detail(
+    db: Session,
+    story: Story,
+    saved_ids: set[str] | None = None,
+    language: str | None = None,
+) -> StoryDetail:
+    translation = get_story_translation(db, story, language)
     pairs = _story_articles(db, story)
     links = [
         StorySourceLink(
@@ -72,17 +86,23 @@ def story_to_detail(db: Session, story: Story, saved_ids: set[str] | None = None
     ]
     comparison = [
         SourceComparisonItem(source=c.get("source", ""), framing=c.get("framing", ""))
-        for c in (story.source_comparison or [])
+        for c in (
+            translation.source_comparison
+            if translation is not None
+            else (story.source_comparison or [])
+        )
         if isinstance(c, dict)
     ]
     return StoryDetail(
         id=story.id,
-        headline=story.headline,
-        summary=story.summary,
-        what_happened=story.what_happened,
-        why_it_matters=story.why_it_matters,
-        key_facts=story.key_facts or [],
-        unclear_points=story.unclear_points or [],
+        headline=translation.headline if translation else story.headline,
+        summary=translation.summary if translation else story.summary,
+        what_happened=translation.what_happened if translation else story.what_happened,
+        why_it_matters=translation.why_it_matters if translation else story.why_it_matters,
+        key_facts=translation.key_facts if translation else (story.key_facts or []),
+        unclear_points=(
+            translation.unclear_points if translation else (story.unclear_points or [])
+        ),
         category=story.category,
         region=story.region,
         confidence_label=story.confidence_label,
@@ -92,4 +112,5 @@ def story_to_detail(db: Session, story: Story, saved_ids: set[str] | None = None
         source_comparison=comparison,
         last_updated_at=story.last_updated_at,
         saved=story.id in (saved_ids or set()),
+        content_language=translation.language if translation else story.language,
     )

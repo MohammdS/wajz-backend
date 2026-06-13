@@ -86,6 +86,12 @@ _SYNTH_SYSTEM = (
 
 _MAX_ARTICLE_CHARS = 12000
 
+_LANGUAGE_NAMES = {
+    "en": "English",
+    "ar": "Arabic",
+    "he": "Hebrew",
+}
+
 
 class AnthropicProvider(AIProvider):
     name = "anthropic"
@@ -139,6 +145,31 @@ class AnthropicProvider(AIProvider):
             f"{len(articles)} articles covering the same event:\n\n" + "\n\n".join(parts)
         )
         data = self._request_json(_SYNTH_SYSTEM, prompt, _SYNTH_SCHEMA)
+        return StorySynthesis(
+            headline=data["headline"],
+            summary=data["summary"],
+            what_happened=data["what_happened"],
+            why_it_matters=data["why_it_matters"],
+            key_facts=data["key_facts"][:8],
+            unclear_points=data["unclear_points"][:5],
+            source_comparison=data["source_comparison"],
+        )
+
+    def translate_story(
+        self,
+        story: StorySynthesis,
+        source_language: str,
+        target_language: str,
+    ) -> StorySynthesis:
+        target_name = _LANGUAGE_NAMES.get(target_language, target_language)
+        prompt = (
+            f"Translate this source-grounded news story from {source_language} to "
+            f"{target_name}. Preserve names, numbers, uncertainty, and meaning exactly. "
+            "Do not add facts or commentary. Return every field in the target language, "
+            "except source names inside source_comparison, which must remain unchanged.\n\n"
+            f"{json.dumps(story.__dict__, ensure_ascii=False)}"
+        )
+        data = self._request_json(_GROUNDING_RULES, prompt, _SYNTH_SCHEMA)
         return StorySynthesis(
             headline=data["headline"],
             summary=data["summary"],

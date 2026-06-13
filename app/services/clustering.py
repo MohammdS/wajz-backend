@@ -120,6 +120,7 @@ def create_story_from_article(db: Session, article: Article) -> Story:
         language=article.language or "en",
         entities=article.entities or [],
         confidence_label="opinion_analysis" if article.is_opinion else "single_source",
+        status="pending_review",
     )
     db.add(story)
     db.flush()

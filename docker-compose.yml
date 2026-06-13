@@ -20,7 +20,14 @@ services:
       AUTH_MODE: ${AUTH_MODE:-dev}
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me-admin}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@wajz.app}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-4-8}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      ZAI_MODEL: ${ZAI_MODEL:-glm-4.5-air}
+      ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}
     ports:
       - "8000:8000"
     depends_on:
@@ -32,7 +39,12 @@ services:
     command: python -m app.worker
     environment:
       DATABASE_URL: postgresql+psycopg2://wajz:wajz@db:5432/wajz
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-4-8}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      ZAI_MODEL: ${ZAI_MODEL:-glm-4.5-air}
+      ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}
       INGESTION_INTERVAL_MINUTES: ${INGESTION_INTERVAL_MINUTES:-30}
     depends_on:
       db:

@@ -13,6 +13,7 @@ def test_me_profile(client, auth_headers):
 def test_preferences_roundtrip(client, auth_headers):
     defaults = client.get("/me/preferences", headers=auth_headers).json()
     assert defaults["briefing_length"] == "10_minutes"
+    assert defaults["onboarding_completed"] is False
 
     payload = {
         "preferred_language": "en",
@@ -21,10 +22,12 @@ def test_preferences_roundtrip(client, auth_headers):
         "briefing_length": "5_minutes",
         "explanation_level": "beginner_friendly",
         "notification_preference": "daily_evening",
+        "onboarding_completed": True,
     }
     updated = client.put("/me/preferences", json=payload, headers=auth_headers).json()
     assert updated["topics"] == ["Technology", "Economy"]
     assert updated["briefing_length"] == "5_minutes"
+    assert updated["onboarding_completed"] is True
 
     again = client.get("/me/preferences", headers=auth_headers).json()
     assert again == updated
@@ -70,6 +73,20 @@ def test_briefing_respects_length_change(client, auth_headers, demo_data):
     second = client.get("/me/briefing/today", headers=auth_headers).json()
     assert second["briefing_length"] == "5_minutes"
     assert len(second["stories"]) <= max(len(first["stories"]), 7)
+
+
+def test_briefing_uses_preferred_content_language(client, auth_headers, demo_data):
+    payload = {
+        "preferred_language": "ar",
+        "topics": [],
+        "regions": [],
+        "briefing_length": "10_minutes",
+        "explanation_level": "standard",
+        "notification_preference": "daily_morning",
+    }
+    client.put("/me/preferences", json=payload, headers=auth_headers)
+    stories = client.get("/me/briefing/today", headers=auth_headers).json()["stories"]
+    assert any(story["content_language"] == "ar" for story in stories)
 
 
 def test_saved_stories_flow(client, auth_headers, demo_data):

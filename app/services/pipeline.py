@@ -16,6 +16,7 @@ from app.services.clustering import (
     create_story_from_article,
     find_matching_story,
 )
+from app.services.translations import generate_story_translations
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ def analyze_article(db: Session, article: Article) -> bool:
         article.unclear_points = analysis.unclear_points
         article.is_opinion = analysis.is_opinion
         article.processing_status = "processed"
+        article.status = "processed"
+        article.failure_reason = None
         _finish_run(run, "success")
         db.commit()
         return True
@@ -70,6 +73,8 @@ def analyze_article(db: Session, article: Article) -> bool:
         failed_run = _record_run(db, "article_analysis", "article", article.id, provider.model_name)
         _finish_run(failed_run, "error", str(exc))
         article.processing_status = "failed"
+        article.status = "failed"
+        article.failure_reason = str(exc)[:2000]
         db.commit()
         logger.warning("Article analysis failed for %s: %s", article.id, exc)
         return False
@@ -111,6 +116,7 @@ def refresh_story_synthesis(db: Session, story: Story) -> None:
     story.confidence_label = compute_confidence_label(db, story)
     if len(articles) < 2:
         db.commit()
+        generate_story_translations(db, story, get_provider())
         return
 
     provider = get_provider()
@@ -138,8 +144,11 @@ def refresh_story_synthesis(db: Session, story: Story) -> None:
         story.key_facts = synthesis.key_facts or story.key_facts
         story.unclear_points = synthesis.unclear_points
         story.source_comparison = synthesis.source_comparison
+        for article in articles:
+            article.status = "summarized"
         _finish_run(run, "success")
         db.commit()
+        generate_story_translations(db, story, provider)
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         failed_run = _record_run(db, "story_synthesis", "story", story.id, provider.model_name)
@@ -169,6 +178,7 @@ def process_pending_articles(db: Session, limit: int = 100) -> dict:
             attach_article_to_story(db, article, story)
         else:
             story = create_story_from_article(db, article)
+        article.status = "clustered"
         db.commit()
         touched_story_ids.add(story.id)
         processed += 1

@@ -1,6 +1,6 @@
 # wajz-backend
 
-Backend for **Wajz (وجز)** — a calm, trust-first, source-grounded daily news briefing app.
+Backend for **Wajz (واجِز)** — a calm, trust-first, source-grounded daily news briefing app.
 
 > Stay informed in minutes. No noise. Sources included.
 
@@ -11,7 +11,7 @@ Flutter app ── HTTPS ──> FastAPI API ──> PostgreSQL / SQLite
                               │
               ┌───────────────┴───────────────┐
         Ingestion worker                AI pipeline
-        (RSS feeds)                     (Anthropic API or
+        (RSS feeds)                     (Anthropic / Z.AI or
                                          heuristic fallback)
 ```
 
@@ -20,10 +20,13 @@ Flutter app ── HTTPS ──> FastAPI API ──> PostgreSQL / SQLite
   summarizes (summary, key facts, why it matters, unclear points) each article,
   then clusters same-event articles into **stories** and synthesizes a
   multi-source summary with a confidence label.
+- **Story translations** are stored once per supported language in
+  `story_translations`. APIs select the requested or user's preferred language
+  and fall back to the source language when a translation is unavailable.
 - **Briefings** are finite, per-user, per-day story selections sized by the
   user's briefing-length preference. The endpoint ends with "You are caught up."
-- AI runs only in the backend (PRD key architecture decision). If no
-  `ANTHROPIC_API_KEY` is configured, a deterministic extractive fallback keeps
+- AI runs only in the backend (PRD key architecture decision). If no Anthropic
+  or Z.AI API key is configured, a deterministic extractive fallback keeps
   the product working — it never invents interpretation.
 
 ## Quick start (local, zero setup)
@@ -66,6 +69,7 @@ docker compose up --build            # API on :8000 + PostgreSQL + worker
 | `GET/POST/DELETE /me/saved-stories[/{id}]` | bearer | read-later |
 | `POST /admin/sources`, `PUT /admin/sources/{id}` | X-Admin-Token | source management |
 | `POST /admin/ingestion/run`, `POST /admin/processing/run` | X-Admin-Token | manual triggers |
+| `POST /admin/translations/run` | X-Admin-Token | backfill missing story translations |
 | `GET /admin/ingestion-runs`, `GET /admin/ai-runs` | X-Admin-Token | observability |
 
 Interactive docs: `http://127.0.0.1:8000/docs`.
@@ -79,6 +83,22 @@ Interactive docs: `http://127.0.0.1:8000/docs`.
 
 Secrets (LLM keys, JWT secrets, admin token) live only in backend env vars —
 never in the mobile app.
+
+## Admin dashboard
+
+Admin access uses the normal bearer token plus a backend-stored role:
+`viewer`, `editor`, or `super_admin`. Configure the initial super-admin email
+with `ADMIN_EMAILS`; subsequent role changes are restricted to `super_admin`.
+Every admin write is recorded in `audit_logs`.
+
+Build the separate Flutter Web entry point from `wajz-mobile`:
+
+```powershell
+flutter build web -t lib/main_admin.dart
+```
+
+The consumer app continues to use `lib/main.dart`. AI/RSS stories enter
+`pending_review`; only an explicit admin publish action exposes them publicly.
 
 ## Tests
 
@@ -95,6 +115,12 @@ labels, rate limiting, cleaning, and the heuristic provider's grounding rules.
 See [.env.example](.env.example). Notable:
 
 - `DATABASE_URL` — SQLite by default; PostgreSQL in docker-compose.
-- `AI_MODEL` — defaults to `claude-opus-4-8`.
+- `AI_PROVIDER` — `auto`, `anthropic`, `zai`, or `heuristic`. In `auto`,
+  Anthropic is preferred when both provider keys are present.
+- `ANTHROPIC_API_KEY` / `AI_MODEL` — Anthropic credentials and model.
+- `ZAI_API_KEY` / `ZAI_MODEL` — Z.AI credentials and GLM model
+  (`glm-4.5-air` by default).
+- `ZAI_BASE_URL` — defaults to Z.AI's OpenAI-compatible API endpoint.
+- `CONTENT_LANGUAGES` — comma-separated stored story languages (`en,ar` by default).
 - `RATE_LIMIT_*` — in-memory fixed-window limiter (single-process MVP; move to
   Redis when scaling out).

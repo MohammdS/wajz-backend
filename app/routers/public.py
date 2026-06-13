@@ -43,20 +43,26 @@ def list_stories(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
 ) -> StoryListResponse:
-    query = db.query(Story)
+    query = db.query(Story).filter(Story.status == "published")
     if category:
         query = query.filter(Story.category == category)
     if region:
         query = query.filter(Story.region == region)
-    if language:
-        query = query.filter(Story.language == language)
     total = query.count()
     stories = (
         query.order_by(Story.last_updated_at.desc()).offset(offset).limit(limit).all()
     )
     saved_ids = saved_story_ids(db, user)
     return StoryListResponse(
-        items=[story_to_list_item(db, s, saved_ids) for s in stories],
+        items=[
+            story_to_list_item(
+                db,
+                s,
+                saved_ids,
+                language or (user.preferred_language if user else None),
+            )
+            for s in stories
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -66,10 +72,16 @@ def list_stories(
 @router.get("/stories/{story_id}", response_model=StoryDetail)
 def get_story(
     story_id: str,
+    language: str | None = None,
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
 ) -> StoryDetail:
     story = db.get(Story, story_id)
-    if story is None:
+    if story is None or story.status != "published":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Story not found")
-    return story_to_detail(db, story, saved_story_ids(db, user))
+    return story_to_detail(
+        db,
+        story,
+        saved_story_ids(db, user),
+        language or (user.preferred_language if user else None),
+    )

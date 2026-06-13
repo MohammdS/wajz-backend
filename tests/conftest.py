@@ -4,7 +4,9 @@ os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("AUTH_MODE", "dev")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ADMIN_TOKEN", "test-admin-token")
+os.environ.setdefault("ADMIN_EMAILS", "admin@wajz.app")
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
+os.environ.setdefault("ZAI_API_KEY", "")
 os.environ.setdefault("RATE_LIMIT_PUBLIC", "1000")
 os.environ.setdefault("RATE_LIMIT_AUTH", "5")
 
@@ -68,8 +70,13 @@ def auth_headers(client):
 
 
 @pytest.fixture
-def admin_headers():
-    return {"X-Admin-Token": "test-admin-token"}
+def admin_headers(client):
+    response = client.post(
+        "/auth/dev-login",
+        json={"email": "admin@wajz.app", "display_name": "Admin"},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 @pytest.fixture

@@ -28,6 +28,9 @@ class User(Base, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(255))
     preferred_language: Mapped[str] = mapped_column(String(8), default="en")
     auth_provider: Mapped[str] = mapped_column(String(32), default="dev")
+    admin_role: Mapped[str | None] = mapped_column(String(24), index=True)
+    account_status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     preferences: Mapped["UserPreferences | None"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
@@ -44,6 +47,7 @@ class UserPreferences(Base, TimestampMixin):
     briefing_length: Mapped[str] = mapped_column(String(16), default="10_minutes")
     explanation_level: Mapped[str] = mapped_column(String(24), default="standard")
     notification_preference: Mapped[str] = mapped_column(String(32), default="daily_morning")
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     user: Mapped[User] = relationship(back_populates="preferences")
 
@@ -60,6 +64,13 @@ class Source(Base, TimestampMixin):
     reliability_level: Mapped[str] = mapped_column(String(16), default="unknown")  # high|medium|low|unknown
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    region: Mapped[str | None] = mapped_column(String(64), index=True)
+    category: Mapped[str | None] = mapped_column(String(32), index=True)
+    source_type: Mapped[str] = mapped_column(String(24), default="rss")
+    last_successful_fetch: Mapped[datetime | None] = mapped_column(DateTime)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    reliability_notes: Mapped[str | None] = mapped_column(Text)
 
     articles: Mapped[list["Article"]] = relationship(back_populates="source")
 
@@ -91,6 +102,11 @@ class Article(Base, TimestampMixin):
     processing_status: Mapped[str] = mapped_column(
         String(16), default="pending", index=True
     )  # pending|processed|failed
+    status: Mapped[str] = mapped_column(String(16), default="collected", index=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    ingestion_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ingestion_runs.id"), index=True
+    )
 
     source: Mapped[Source] = relationship(back_populates="articles")
 
@@ -113,10 +129,38 @@ class Story(Base, TimestampMixin):
     language: Mapped[str] = mapped_column(String(8), default="en")
     entities: Mapped[list] = mapped_column(JSON, default=list)
     last_updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending_review", index=True)
+    editor_notes: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    published_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
 
     articles: Mapped[list["StoryArticle"]] = relationship(
         back_populates="story", cascade="all, delete-orphan"
     )
+    translations: Mapped[list["StoryTranslation"]] = relationship(
+        back_populates="story", cascade="all, delete-orphan"
+    )
+
+
+class StoryTranslation(Base, TimestampMixin):
+    __tablename__ = "story_translations"
+    __table_args__ = (
+        UniqueConstraint("story_id", "language", name="uq_story_translation_language"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    story_id: Mapped[str] = mapped_column(ForeignKey("stories.id"), index=True)
+    language: Mapped[str] = mapped_column(String(8), index=True)
+    headline: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    what_happened: Mapped[str | None] = mapped_column(Text)
+    why_it_matters: Mapped[str | None] = mapped_column(Text)
+    key_facts: Mapped[list] = mapped_column(JSON, default=list)
+    unclear_points: Mapped[list] = mapped_column(JSON, default=list)
+    source_comparison: Mapped[list] = mapped_column(JSON, default=list)
+    provider: Mapped[str | None] = mapped_column(String(64))
+
+    story: Mapped[Story] = relationship(back_populates="translations")
 
 
 class StoryArticle(Base):
@@ -173,7 +217,9 @@ class AIRun(Base):
     input_reference_type: Mapped[str | None] = mapped_column(String(32))
     input_reference_id: Mapped[str | None] = mapped_column(String(32))
     model_name: Mapped[str | None] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|success|error
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending"
+    )  # pending|success|error|skipped
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -190,3 +236,25 @@ class IngestionRun(Base):
     sources_failed: Mapped[int] = mapped_column(Integer, default=0)
     articles_fetched: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_email: Mapped[str] = mapped_column(String(255))
+    actor_role: Mapped[str] = mapped_column(String(24))
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class AdminSetting(Base, TimestampMixin):
+    __tablename__ = "admin_settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    description: Mapped[str | None] = mapped_column(Text)

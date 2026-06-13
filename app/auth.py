@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -38,12 +38,23 @@ def _decode_token(token: str) -> dict:
 
 
 def get_or_create_user(db: Session, email: str, display_name: str | None, provider: str) -> User:
+    settings = get_settings()
     user = db.query(User).filter(User.email == email).first()
     if user is None:
-        user = User(email=email, display_name=display_name, auth_provider=provider)
+        role = "super_admin" if email.lower() in settings.bootstrap_admin_emails else None
+        user = User(
+            email=email,
+            display_name=display_name,
+            auth_provider=provider,
+            admin_role=role,
+        )
         db.add(user)
         db.flush()
         db.add(UserPreferences(user_id=user.id))
+        db.commit()
+        db.refresh(user)
+    elif user.admin_role is None and email.lower() in settings.bootstrap_admin_emails:
+        user.admin_role = "super_admin"
         db.commit()
         db.refresh(user)
     return user
@@ -71,10 +82,30 @@ def get_current_user(
     user = db.get(User, payload.get("sub", ""))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown user")
+    if user.account_status != "active":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is disabled")
+    user.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
     return user
 
 
-def require_admin(x_admin_token: str | None = Header(default=None)) -> None:
-    settings = get_settings()
-    if not x_admin_token or x_admin_token != settings.admin_token:
+ADMIN_ROLES = {"viewer", "editor", "super_admin"}
+ROLE_LEVEL = {"viewer": 1, "editor": 2, "super_admin": 3}
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.admin_role not in ADMIN_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin authorization required")
+    return user
+
+
+def require_role(minimum_role: str):
+    def dependency(user: User = Depends(require_admin)) -> User:
+        if ROLE_LEVEL[user.admin_role or "viewer"] < ROLE_LEVEL[minimum_role]:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"{minimum_role} role required",
+            )
+        return user
+
+    return dependency

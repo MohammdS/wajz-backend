@@ -59,6 +59,7 @@ def get_preferences(
         briefing_length=prefs.briefing_length,
         explanation_level=prefs.explanation_level,
         notification_preference=prefs.notification_preference,
+        onboarding_completed=prefs.onboarding_completed,
     )
 
 
@@ -90,13 +91,16 @@ def update_preferences(
     prefs.briefing_length = body.briefing_length
     prefs.explanation_level = body.explanation_level
     prefs.notification_preference = body.notification_preference
+    prefs.onboarding_completed = body.onboarding_completed
     db.commit()
     return get_preferences(user, db)
 
 
 @router.get("/briefing/today", response_model=BriefingResponse)
 def today_briefing(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    language: str | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> BriefingResponse:
     briefing = get_or_create_today_briefing(db, user)
     saved_ids = saved_story_ids(db, user)
@@ -104,7 +108,11 @@ def today_briefing(
     for link in briefing.stories:
         story = db.get(Story, link.story_id)
         if story is not None:
-            items.append(story_to_list_item(db, story, saved_ids))
+            items.append(
+                story_to_list_item(
+                    db, story, saved_ids, language or user.preferred_language
+                )
+            )
     return BriefingResponse(
         date=briefing.briefing_date,
         briefing_length=briefing.briefing_length,
@@ -116,7 +124,9 @@ def today_briefing(
 
 @router.get("/saved-stories", response_model=list[SavedStoryOut])
 def list_saved(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    language: str | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> list[SavedStoryOut]:
     rows = (
         db.query(SavedStory)
@@ -130,7 +140,12 @@ def list_saved(
         story = db.get(Story, row.story_id)
         if story is not None:
             result.append(
-                SavedStoryOut(saved_at=row.saved_at, story=story_to_list_item(db, story, saved_ids))
+                SavedStoryOut(
+                    saved_at=row.saved_at,
+                    story=story_to_list_item(
+                        db, story, saved_ids, language or user.preferred_language
+                    ),
+                )
             )
     return result
 

@@ -31,7 +31,7 @@ def select_briefing_stories(db: Session, prefs: UserPreferences | None, count: i
     cutoff = utcnow() - timedelta(hours=STORY_LOOKBACK_HOURS)
     candidates = (
         db.query(Story)
-        .filter(Story.last_updated_at >= cutoff)
+        .filter(Story.last_updated_at >= cutoff, Story.status == "published")
         .order_by(Story.importance_score.desc())
         .limit(300)
         .all()

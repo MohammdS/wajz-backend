@@ -1,8 +1,8 @@
 """AI provider abstraction.
 
-The pipeline talks to an AIProvider. AnthropicProvider produces source-grounded
-LLM analysis; HeuristicProvider is the deterministic fallback (PRD 21.2: the app
-must still work if AI processing fails or is unconfigured).
+The pipeline supports source-grounded Anthropic and Z.AI providers.
+HeuristicProvider is the deterministic fallback (PRD 21.2: the app must still
+work if AI processing fails or is unconfigured).
 """
 
 from abc import ABC, abstractmethod
@@ -52,6 +52,15 @@ class AIProvider(ABC):
         unclear_points, text}.
         """
 
+    def translate_story(
+        self,
+        story: StorySynthesis,
+        source_language: str,
+        target_language: str,
+    ) -> StorySynthesis | None:
+        """Translate grounded story content. Providers may decline by returning None."""
+        return None
+
 
 @lru_cache
 def get_provider() -> AIProvider:
@@ -59,8 +68,29 @@ def get_provider() -> AIProvider:
     from app.services.ai.heuristic_provider import HeuristicProvider
 
     settings = get_settings()
-    if settings.anthropic_api_key:
+    provider = settings.ai_provider.lower()
+
+    if provider == "heuristic":
+        return HeuristicProvider()
+
+    if provider == "anthropic" or (provider == "auto" and settings.anthropic_api_key):
+        if not settings.anthropic_api_key:
+            raise ValueError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY")
         from app.services.ai.anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(api_key=settings.anthropic_api_key, model=settings.ai_model)
+
+    if provider == "zai" or (provider == "auto" and settings.zai_api_key):
+        if not settings.zai_api_key:
+            raise ValueError("AI_PROVIDER=zai requires ZAI_API_KEY")
+        from app.services.ai.zai_provider import ZAIProvider
+
+        return ZAIProvider(
+            api_key=settings.zai_api_key,
+            model=settings.zai_model,
+            base_url=settings.zai_base_url,
+        )
+
+    if provider != "auto":
+        raise ValueError(f"Unsupported AI_PROVIDER: {settings.ai_provider}")
     return HeuristicProvider()
