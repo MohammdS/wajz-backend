@@ -16,51 +16,58 @@ STORY_LOOKBACK_HOURS = 36
 READ_MINUTES = {"5_minutes": 5, "10_minutes": 10, "20_minutes": 20}
 
 
-def _preference_boost(story: Story, prefs: UserPreferences | None) -> float:
+def briefing_score(
+    story: Story,
+    prefs: UserPreferences | None,
+    *,
+    now: datetime | None = None,
+) -> float | None:
+    """Score an eligible story from 0 to 6 for a user's briefing."""
     if prefs is None:
-        return 0.0
-    boost = 0.0
-    if story.category and story.category in (prefs.topics or []):
-        boost += 0.3
-    if story.region and story.region in (prefs.regions or []):
-        boost += 0.2
-    return boost
+        return None
+
+    topics = set(prefs.topics or [])
+    regions = set(prefs.regions or [])
+    matched_topics = int(story.category is not None and story.category in topics)
+    matched_regions = int(story.region is not None and story.region in regions)
+    if matched_topics + matched_regions == 0:
+        return None
+
+    reference_time = now or utcnow()
+    age_hours = max(
+        0.0,
+        (reference_time - story.last_updated_at).total_seconds() / 3600,
+    )
+    recency = max(0.0, (STORY_LOOKBACK_HOURS - age_hours) / STORY_LOOKBACK_HOURS)
+    topic_score = 3 * matched_topics / len(topics) if topics else 0.0
+    region_score = 2 * matched_regions / len(regions) if regions else 0.0
+    return topic_score + region_score + recency
 
 
-def select_briefing_stories(db: Session, prefs: UserPreferences | None, count: int) -> list[Story]:
-    cutoff = utcnow() - timedelta(hours=STORY_LOOKBACK_HOURS)
+def select_briefing_stories(
+    db: Session,
+    prefs: UserPreferences | None,
+    count: int,
+) -> list[Story]:
+    now = utcnow()
+    cutoff = now - timedelta(hours=STORY_LOOKBACK_HOURS)
     candidates = (
         db.query(Story)
         .filter(Story.last_updated_at >= cutoff, Story.status == "published")
-        .order_by(Story.importance_score.desc())
+        .order_by(Story.last_updated_at.desc())
         .limit(300)
         .all()
     )
-    ranked = sorted(
-        candidates,
-        key=lambda s: s.importance_score + _preference_boost(s, prefs),
+    scored = [
+        (score, story)
+        for story in candidates
+        if (score := briefing_score(story, prefs, now=now)) is not None
+    ]
+    scored.sort(
+        key=lambda item: (item[0], item[1].last_updated_at),
         reverse=True,
     )
-    # Keep the briefing diverse: cap how many stories one category can take.
-    per_category_cap = max(2, count // 3)
-    selected: list[Story] = []
-    category_counts: dict[str, int] = {}
-    for story in ranked:
-        key = story.category or "World"
-        if category_counts.get(key, 0) >= per_category_cap:
-            continue
-        selected.append(story)
-        category_counts[key] = category_counts.get(key, 0) + 1
-        if len(selected) >= count:
-            break
-    # Backfill if category caps left us short.
-    if len(selected) < count:
-        for story in ranked:
-            if story not in selected:
-                selected.append(story)
-                if len(selected) >= count:
-                    break
-    return selected
+    return [story for _, story in scored[:count]]
 
 
 def get_or_create_today_briefing(db: Session, user: User) -> Briefing:

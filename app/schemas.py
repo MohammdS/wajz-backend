@@ -182,7 +182,9 @@ class BriefingResponse(BaseModel):
     briefing_length: str
     estimated_read_time_minutes: int
     greeting: str
+    display_name: str | None = None
     stories: list[StoryListItem]
+    opened_story_ids: list[str] = Field(default_factory=list)
     completion_message: str = "You are caught up."
 
 

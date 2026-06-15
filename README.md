@@ -24,7 +24,9 @@ Flutter app ── HTTPS ──> FastAPI API ──> PostgreSQL / SQLite
   `story_translations`. APIs select the requested or user's preferred language
   and fall back to the source language when a translation is unavailable.
 - **Briefings** are finite, per-user, per-day story selections sized by the
-  user's briefing-length preference. The endpoint ends with "You are caught up."
+  user's briefing-length preference. Stories must match at least one selected
+  topic or region and are ranked by normalized topic match, region match, and
+  recency within a 36-hour window. The endpoint ends with "You are caught up."
 - AI runs only in the backend (PRD key architecture decision). If no Anthropic
   or Z.AI API key is configured, a deterministic extractive fallback keeps
   the product working — it never invents interpretation.
@@ -66,6 +68,7 @@ docker compose up --build            # API on :8000 + PostgreSQL + worker
 | `POST /auth/dev-login` | — | local-dev JWT (AUTH_MODE=dev only) |
 | `GET /me`, `GET/PUT /me/preferences` | bearer | profile + preferences |
 | `GET /me/briefing/today` | bearer | finite daily briefing |
+| `POST /me/stories/{id}/opened` | bearer | record per-user story progress |
 | `GET/POST/DELETE /me/saved-stories[/{id}]` | bearer | read-later |
 | `POST /admin/sources`, `PUT /admin/sources/{id}` | X-Admin-Token | source management |
 | `POST /admin/ingestion/run`, `POST /admin/processing/run` | X-Admin-Token | manual triggers |

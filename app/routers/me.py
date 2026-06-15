@@ -1,9 +1,12 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import SavedStory, Story, User, UserPreferences
+from app.models import Briefing, OpenedStory, SavedStory, Story, User, UserPreferences
 from app.rate_limit import rate_limit
 from app.schemas import (
     BRIEFING_LENGTHS,
@@ -85,6 +88,11 @@ def update_preferences(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid regions: {invalid_regions}")
 
     prefs = _get_prefs(db, user)
+    rebuild_briefing = (
+        prefs.topics != body.topics
+        or prefs.regions != body.regions
+        or prefs.briefing_length != body.briefing_length
+    )
     user.preferred_language = body.preferred_language
     prefs.topics = body.topics
     prefs.regions = body.regions
@@ -92,6 +100,17 @@ def update_preferences(
     prefs.explanation_level = body.explanation_level
     prefs.notification_preference = body.notification_preference
     prefs.onboarding_completed = body.onboarding_completed
+    if rebuild_briefing:
+        briefing = (
+            db.query(Briefing)
+            .filter(
+                Briefing.user_id == user.id,
+                Briefing.briefing_date == date.today().isoformat(),
+            )
+            .first()
+        )
+        if briefing is not None:
+            db.delete(briefing)
     db.commit()
     return get_preferences(user, db)
 
@@ -104,6 +123,16 @@ def today_briefing(
 ) -> BriefingResponse:
     briefing = get_or_create_today_briefing(db, user)
     saved_ids = saved_story_ids(db, user)
+    story_ids = [link.story_id for link in briefing.stories]
+    opened_ids = {
+        row.story_id
+        for row in db.query(OpenedStory)
+        .filter(
+            OpenedStory.user_id == user.id,
+            OpenedStory.story_id.in_(story_ids),
+        )
+        .all()
+    } if story_ids else set()
     items = []
     for link in briefing.stories:
         story = db.get(Story, link.story_id)
@@ -118,8 +147,36 @@ def today_briefing(
         briefing_length=briefing.briefing_length,
         estimated_read_time_minutes=READ_MINUTES.get(briefing.briefing_length, 10),
         greeting=greeting_for_now(),
+        display_name=user.display_name,
         stories=items,
+        opened_story_ids=sorted(opened_ids),
     )
+
+
+@router.post("/stories/{story_id}/opened")
+def mark_story_opened(
+    story_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if db.get(Story, story_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Story not found")
+    existing = (
+        db.query(OpenedStory)
+        .filter(
+            OpenedStory.user_id == user.id,
+            OpenedStory.story_id == story_id,
+        )
+        .first()
+    )
+    if existing is None:
+        db.add(OpenedStory(user_id=user.id, story_id=story_id))
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another device may record the same open at the same time.
+            db.rollback()
+    return {"opened": True, "story_id": story_id}
 
 
 @router.get("/saved-stories", response_model=list[SavedStoryOut])

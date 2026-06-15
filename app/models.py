@@ -209,6 +209,14 @@ class SavedStory(Base):
     story: Mapped[Story] = relationship()
 
 
+class OpenedStory(Base):
+    __tablename__ = "opened_stories"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    story_id: Mapped[str] = mapped_column(ForeignKey("stories.id"), primary_key=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class AIRun(Base):
     __tablename__ = "ai_runs"
 
