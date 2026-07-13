@@ -23,6 +23,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002,http://localhost:3002"
     )
 
+    # Observability. All external exporters are opt-in.
+    environment: str = "development"
+    release: str = "0.1.0"
+    metrics_token: str = ""
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+    otel_exporter_otlp_endpoint: str = ""
+    alert_webhook_url: str = ""
+    alert_webhook_token: str = ""
+
     @property
     def bootstrap_admin_emails(self) -> set[str]:
         return {

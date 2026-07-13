@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import AIRun, Story, StoryTranslation, utcnow
+from app.observability import record_ai_run
 from app.services.ai.base import AIProvider, StorySynthesis
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def generate_story_translations(
             else:
                 upsert_translation(db, story, language, translated, provider.name)
                 run.status = "success"
+            record_ai_run(run.task_type, run.status)
             run.completed_at = utcnow()
             db.commit()
         except Exception as exc:  # noqa: BLE001
@@ -105,6 +107,7 @@ def generate_story_translations(
                 completed_at=utcnow(),
             )
             db.add(failed)
+            record_ai_run(failed.task_type, failed.status)
             db.commit()
             logger.warning("Story translation failed for %s/%s: %s", story.id, language, exc)
 

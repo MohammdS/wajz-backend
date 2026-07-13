@@ -63,6 +63,8 @@ docker compose up --build            # API on :8000 + PostgreSQL + worker
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `GET /health` | — | liveness |
+| `GET /health/live`, `GET /health/ready` | — | external liveness + database readiness probes |
+| `GET /metrics` | optional `X-Metrics-Token` | Prometheus metrics |
 | `GET /categories`, `GET /sources` | — | reference data |
 | `GET /stories`, `GET /stories/{id}` | optional | story feed + detail (sources always included) |
 | `POST /auth/dev-login` | — | local-dev JWT (AUTH_MODE=dev only) |
@@ -102,6 +104,19 @@ flutter build web -t lib/main_admin.dart
 
 The consumer app continues to use `lib/main.dart`. AI/RSS stories enter
 `pending_review`; only an explicit admin publish action exposes them publicly.
+
+## Observability
+
+- Every response includes `X-Request-ID`; an incoming safe request ID is preserved.
+- `/metrics` exports bounded-cardinality HTTP, AI, and ingestion Prometheus metrics.
+- `SENTRY_DSN` enables FastAPI/worker crash reporting without sending user PII.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` enables FastAPI and SQLAlchemy trace export over OTLP/HTTP.
+- `ALERT_WEBHOOK_URL` sends non-blocking ingestion and worker failure alerts. Set
+  `ALERT_WEBHOOK_TOKEN` when the receiver requires a bearer token.
+- External monitors should probe `/health/live` for process health and
+  `/health/ready` for database readiness.
+
+All external exporters are disabled by default for local development.
 
 ## Tests
 

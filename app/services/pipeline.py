@@ -10,6 +10,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models import AIRun, Article, Source, Story, StoryArticle, utcnow
+from app.observability import dispatch_alert, record_ai_run
 from app.services.ai import get_provider
 from app.services.clustering import (
     attach_article_to_story,
@@ -39,6 +40,7 @@ def _finish_run(run: AIRun, status: str, error: str | None = None) -> None:
     run.status = status
     run.error_message = (error or "")[:2000] or None
     run.completed_at = utcnow()
+    record_ai_run(run.task_type, status)
 
 
 def analyze_article(db: Session, article: Article) -> bool:
@@ -187,5 +189,12 @@ def process_pending_articles(db: Session, limit: int = 100) -> dict:
         story = db.get(Story, story_id)
         if story is not None:
             refresh_story_synthesis(db, story)
+
+    if failed:
+        dispatch_alert(
+            "pipeline.article_failures",
+            "warning",
+            {"failed": failed, "processed": processed},
+        )
 
     return {"processed": processed, "failed": failed, "stories_touched": len(touched_story_ids)}

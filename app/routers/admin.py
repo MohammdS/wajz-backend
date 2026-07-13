@@ -38,6 +38,7 @@ from app.models import (
     UserPreferences,
     utcnow,
 )
+from app.observability import dispatch_alert, record_ingestion_run
 from app.rate_limit import rate_limit
 from app.services.ai import StorySynthesis, get_provider
 from app.services.clustering import attach_article_to_story, create_story_from_article
@@ -463,6 +464,13 @@ def run_source(
         run.sources_failed = 1
         run.error_message = str(exc)[:2000]
     run.completed_at = utcnow()
+    record_ingestion_run(run.status, run.articles_fetched, run.sources_failed)
+    if run.sources_failed:
+        dispatch_alert(
+            "ingestion.source_failure",
+            "warning",
+            {"run_id": run.id, "source_id": source.id},
+        )
     _audit(db, actor, "ingestion.source_run", "source", source.id, {"run_id": run.id})
     db.commit()
     return {"run_id": run.id, "status": run.status, "articles_fetched": run.articles_fetched}
@@ -503,6 +511,18 @@ def run_ingestion_filtered(
     )
     run.error_message = "; ".join(errors)[:2000] or None
     run.completed_at = utcnow()
+    record_ingestion_run(run.status, run.articles_fetched, run.sources_failed)
+    if run.sources_failed:
+        dispatch_alert(
+            "ingestion.source_failures",
+            "critical" if run.status == "failed" else "warning",
+            {
+                "run_id": run.id,
+                "status": run.status,
+                "failed_sources": run.sources_failed,
+                "sources_total": run.sources_total,
+            },
+        )
     _audit(db, actor, "ingestion.run", "ingestion_run", run.id)
     db.commit()
     return {"id": run.id, "status": run.status, "articles_fetched": run.articles_fetched}

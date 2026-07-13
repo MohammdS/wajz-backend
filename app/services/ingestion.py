@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.models import Article, IngestionRun, Source, utcnow
+from app.observability import dispatch_alert, record_ingestion_run
 from app.services.cleaning import clean_text
 
 logger = logging.getLogger(__name__)
@@ -122,4 +123,16 @@ def run_ingestion(db: Session) -> IngestionRun:
         run.status = "failed"
     run.error_message = "; ".join(errors)[:2000] or None
     db.commit()
+    record_ingestion_run(run.status, run.articles_fetched, run.sources_failed)
+    if run.sources_failed:
+        dispatch_alert(
+            "ingestion.source_failures",
+            "critical" if run.status == "failed" else "warning",
+            {
+                "run_id": run.id,
+                "status": run.status,
+                "failed_sources": run.sources_failed,
+                "sources_total": run.sources_total,
+            },
+        )
     return run

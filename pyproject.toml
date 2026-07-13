@@ -17,6 +17,12 @@ dependencies = [
     "PyJWT>=2.8",
     "anthropic>=0.49",
     "psycopg2-binary>=2.9; platform_system != 'Emscripten'",
+    "prometheus-client>=0.21",
+    "sentry-sdk[fastapi]>=2.22",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
 ]
 
 [project.optional-dependencies]

@@ -9,6 +9,7 @@ import time
 
 from app.config import get_settings
 from app.database import SessionLocal
+from app.observability import dispatch_alert
 from app.services.ingestion import run_ingestion
 from app.services.pipeline import process_pending_articles
 
@@ -37,8 +38,13 @@ def main() -> None:
     while True:
         try:
             run_once()
-        except Exception:  # noqa: BLE001 - the worker loop must survive any cycle failure
+        except Exception as exc:  # noqa: BLE001 - the worker loop must survive any cycle failure
             logger.exception("Worker cycle failed")
+            dispatch_alert(
+                "worker.cycle_failed",
+                "critical",
+                {"exception_type": type(exc).__name__},
+            )
         time.sleep(interval)
 
 
