@@ -576,7 +576,11 @@ def reprocess_selected(
         details={"article_ids": body.article_ids},
     )
     db.commit()
-    return process_pending_articles(db, limit=len(articles))
+    return process_pending_articles(
+        db,
+        limit=len(articles),
+        article_ids=body.article_ids,
+    )
 
 
 @router.get("/ingestion-runs")

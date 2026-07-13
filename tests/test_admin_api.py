@@ -81,3 +81,27 @@ def test_admin_write_creates_audit_log(client, admin_headers):
     assert response.status_code == 200
     logs = client.get("/admin/audit-logs", headers=admin_headers).json()
     assert logs[0]["action"] == "studio.manual_story"
+
+
+def test_batch_reprocessing_is_limited_to_selected_articles(
+    client, admin_headers, demo_data, db
+):
+    from app.models import Article
+
+    selected, untouched = db.query(Article).order_by(Article.id).limit(2).all()
+    for article in (selected, untouched):
+        article.processing_status = "pending"
+        article.status = "collected"
+    db.commit()
+
+    response = client.post(
+        "/admin/articles/reprocess-selected",
+        headers=admin_headers,
+        json={"article_ids": [selected.id]},
+    )
+    assert response.status_code == 200
+    assert response.json()["processed"] == 1
+
+    db.expire_all()
+    assert db.get(Article, selected.id).processing_status == "processed"
+    assert db.get(Article, untouched.id).processing_status == "pending"

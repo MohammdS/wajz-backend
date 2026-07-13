@@ -159,15 +159,16 @@ def refresh_story_synthesis(db: Session, story: Story) -> None:
         logger.warning("Story synthesis failed for %s: %s", story.id, exc)
 
 
-def process_pending_articles(db: Session, limit: int = 100) -> dict:
+def process_pending_articles(
+    db: Session,
+    limit: int = 100,
+    article_ids: list[str] | None = None,
+) -> dict:
     """Main pipeline entry: analyze pending articles and cluster them into stories."""
-    pending = (
-        db.query(Article)
-        .filter(Article.processing_status == "pending")
-        .order_by(Article.fetched_at.asc())
-        .limit(limit)
-        .all()
-    )
+    query = db.query(Article).filter(Article.processing_status == "pending")
+    if article_ids is not None:
+        query = query.filter(Article.id.in_(article_ids))
+    pending = query.order_by(Article.fetched_at.asc()).limit(limit).all()
     processed = failed = 0
     touched_story_ids: set[str] = set()
 
