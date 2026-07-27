@@ -1,0 +1,33 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./ci.db
+      AUTH_MODE: dev
+      SECRET_KEY: ci-only-secret-key-at-least-32-bytes
+      ADMIN_EMAILS: admin@wajz.app
+      RATE_LIMIT_PUBLIC: "1000"
+      RATE_LIMIT_AUTH: "1000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests
+      - run: pytest -q
+      - run: alembic upgrade head
+      - run: alembic check
+      - run: docker compose config --quiet
+      - run: docker build --tag wajz-backend:ci .
