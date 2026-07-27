@@ -74,7 +74,10 @@ def find_matching_story(db: Session, article: Article) -> Story | None:
     window_start = utcnow() - timedelta(hours=settings.cluster_window_hours)
     candidates = (
         db.query(Story)
-        .filter(Story.last_updated_at >= window_start)
+        .filter(
+            Story.status == "published",
+            Story.last_updated_at >= window_start,
+        )
         .order_by(Story.last_updated_at.desc())
         .limit(300)
         .all()
@@ -120,7 +123,8 @@ def create_story_from_article(db: Session, article: Article) -> Story:
         language=article.language or "en",
         entities=article.entities or [],
         confidence_label="opinion_analysis" if article.is_opinion else "single_source",
-        status="pending_review",
+        status="published",
+        published_at=utcnow(),
     )
     db.add(story)
     db.flush()

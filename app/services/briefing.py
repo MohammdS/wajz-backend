@@ -82,9 +82,21 @@ def get_or_create_today_briefing(db: Session, user: User) -> Briefing:
     length = prefs.briefing_length if prefs else "10_minutes"
 
     if briefing is not None and briefing.briefing_length == length:
-        return briefing
+        story_ids = [link.story_id for link in briefing.stories]
+        published_count = (
+            db.query(Story)
+            .filter(
+                Story.id.in_(story_ids),
+                Story.status == "published",
+            )
+            .count()
+            if story_ids
+            else 0
+        )
+        if published_count == len(story_ids):
+            return briefing
     if briefing is not None:
-        # Length preference changed today: rebuild.
+        # Preferences or publication status changed today: rebuild.
         db.delete(briefing)
         db.flush()
 

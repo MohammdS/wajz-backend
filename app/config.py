@@ -12,11 +12,14 @@ class Settings(BaseSettings):
     # Auth
     auth_mode: str = "dev"  # "dev" | "supabase"
     secret_key: str = "dev-secret-key-not-for-production"
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    supabase_audience: str = "authenticated"
+    # Legacy-only. Production verification uses JWKS or the Supabase Auth API.
     supabase_jwt_secret: str = ""
     token_expiry_hours: int = 24 * 30
 
     # Admin
-    admin_token: str = "dev-admin-token"
     admin_emails: str = "admin@wajz.app"
     cors_origins: str = (
         "http://127.0.0.1:3000,http://localhost:3000,"
@@ -42,13 +45,17 @@ class Settings(BaseSettings):
         }
 
     # AI
-    ai_provider: str = "auto"  # auto | anthropic | zai | heuristic
+    ai_provider: str = "auto"  # auto | anthropic | gemini | zai | heuristic
     anthropic_api_key: str = ""
     ai_model: str = "claude-opus-4-8"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
     zai_api_key: str = ""
     zai_model: str = "glm-4.5-air"
     zai_base_url: str = "https://api.z.ai/api/paas/v4"
     content_languages: str = "en,ar"
+    translation_languages: str = "ar"
+    translation_batch_size: int = 50
 
     @property
     def supported_content_languages(self) -> list[str]:
@@ -56,6 +63,15 @@ class Settings(BaseSettings):
             language.strip().lower()
             for language in self.content_languages.split(",")
             if language.strip()
+        ))
+
+    @property
+    def supported_translation_languages(self) -> list[str]:
+        content_languages = set(self.supported_content_languages)
+        return list(dict.fromkeys(
+            language.strip().lower()
+            for language in self.translation_languages.split(",")
+            if language.strip().lower() in content_languages
         ))
 
     # Worker
@@ -76,6 +92,70 @@ class Settings(BaseSettings):
         "10_minutes": 12,
         "20_minutes": 25,
     }
+
+    def validate_runtime(self) -> None:
+        if self.environment.lower() != "production":
+            return
+        errors: list[str] = []
+        placeholder_markers = (
+            "replace-with",
+            "your-project",
+            "example.com",
+            "change-me",
+            "dev-secret",
+        )
+
+        def is_placeholder(value: str) -> bool:
+            normalized = value.strip().lower()
+            return not normalized or any(
+                marker in normalized for marker in placeholder_markers
+            )
+
+        if self.auth_mode != "supabase":
+            errors.append("AUTH_MODE must be supabase")
+        if (
+            not self.supabase_url.startswith("https://")
+            or is_placeholder(self.supabase_url)
+        ):
+            errors.append("SUPABASE_URL must be a real HTTPS project URL")
+        if is_placeholder(self.supabase_publishable_key):
+            errors.append("SUPABASE_PUBLISHABLE_KEY must be replaced")
+        if self.database_url.startswith("sqlite") or is_placeholder(self.database_url):
+            errors.append("DATABASE_URL must use a production database")
+        if len(self.secret_key) < 32 or is_placeholder(self.secret_key):
+            errors.append("SECRET_KEY must be a unique value of at least 32 characters")
+        origins = [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
+        if not origins or any(
+            not origin.startswith("https://") or is_placeholder(origin)
+            for origin in origins
+        ):
+            errors.append("CORS_ORIGINS must contain only real HTTPS origins")
+        if (
+            not self.bootstrap_admin_emails
+            or self.bootstrap_admin_emails == {"admin@wajz.app"}
+            or any(is_placeholder(email) for email in self.bootstrap_admin_emails)
+        ):
+            errors.append("ADMIN_EMAILS must contain a real bootstrap administrator")
+        if is_placeholder(self.metrics_token):
+            errors.append("METRICS_TOKEN must be replaced")
+        if "ar" not in self.supported_content_languages:
+            errors.append("CONTENT_LANGUAGES must include ar")
+        if "ar" not in self.supported_translation_languages:
+            errors.append("TRANSLATION_LANGUAGES must include ar")
+        if self.ai_provider == "anthropic" and is_placeholder(self.anthropic_api_key):
+            errors.append("ANTHROPIC_API_KEY must be replaced")
+        if self.ai_provider == "gemini" and is_placeholder(self.gemini_api_key):
+            errors.append("GEMINI_API_KEY must be replaced")
+        if self.ai_provider == "zai" and is_placeholder(self.zai_api_key):
+            errors.append("ZAI_API_KEY must be replaced")
+        if errors:
+            raise RuntimeError(
+                "Invalid production configuration: " + "; ".join(errors)
+            )
 
 
 @lru_cache

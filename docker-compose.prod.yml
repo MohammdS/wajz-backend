@@ -1,0 +1,95 @@
+x-backend-environment: &backend-environment
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  ENVIRONMENT: production
+  RELEASE: ${RELEASE:?RELEASE is required}
+  AUTH_MODE: supabase
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  SUPABASE_URL: ${SUPABASE_URL:?SUPABASE_URL is required}
+  SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?SUPABASE_PUBLISHABLE_KEY is required}
+  SUPABASE_AUDIENCE: ${SUPABASE_AUDIENCE:-authenticated}
+  ADMIN_EMAILS: ${ADMIN_EMAILS:?ADMIN_EMAILS is required}
+  CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+  METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN is required}
+  AI_PROVIDER: ${AI_PROVIDER:-gemini}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-claude-opus-4-8}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+  ZAI_API_KEY: ${ZAI_API_KEY:-}
+  ZAI_MODEL: ${ZAI_MODEL:-glm-4.5-air}
+  ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}
+  CONTENT_LANGUAGES: ${CONTENT_LANGUAGES:-en,ar}
+  TRANSLATION_LANGUAGES: ${TRANSLATION_LANGUAGES:-ar}
+  TRANSLATION_BATCH_SIZE: ${TRANSLATION_BATCH_SIZE:-50}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+  ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wajz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: wajz
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wajz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: ${WAJZ_BACKEND_IMAGE:-ghcr.io/your-org/wajz-backend:latest}
+    build: .
+    restart: unless-stopped
+    environment: *backend-environment
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    image: ${WAJZ_BACKEND_IMAGE:-ghcr.io/your-org/wajz-backend:latest}
+    build: .
+    restart: unless-stopped
+    command: python -m app.worker
+    environment:
+      <<: *backend-environment
+      INGESTION_INTERVAL_MINUTES: ${INGESTION_INTERVAL_MINUTES:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      WAJZ_API_DOMAIN: ${WAJZ_API_DOMAIN:?WAJZ_API_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

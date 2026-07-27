@@ -281,6 +281,7 @@ def seed_sources(db) -> None:
 def seed_demo(db) -> None:
     seed_sources(db)
     sources = {s.name: s for s in db.query(Source).all()}
+    demo_urls = [spec["url"] for spec in DEMO_ARTICLES]
     added = 0
     for spec in DEMO_ARTICLES:
         if db.query(Article).filter(Article.url == spec["url"]).first():
@@ -300,10 +301,22 @@ def seed_demo(db) -> None:
         added += 1
     db.commit()
     print(f"Demo articles added: {added}")
-    result = process_pending_articles(db)
-    # Demo fixtures are reviewed content. Live pipeline output remains
-    # pending_review until an editor explicitly publishes it.
-    for story in db.query(Story).all():
+    demo_articles = db.query(Article).filter(Article.url.in_(demo_urls)).all()
+    demo_article_ids = [article.id for article in demo_articles]
+    result = process_pending_articles(
+        db,
+        limit=len(demo_article_ids),
+        article_ids=demo_article_ids,
+    )
+    # Publish only demo-linked stories here. The ingestion pipeline publishes
+    # its own RSS-generated stories directly.
+    demo_story_ids = {
+        row.story_id
+        for row in db.query(StoryArticle)
+        .filter(StoryArticle.article_id.in_(demo_article_ids))
+        .all()
+    }
+    for story in db.query(Story).filter(Story.id.in_(demo_story_ids)).all():
         story.status = "published"
         story.published_at = utcnow()
     db.commit()

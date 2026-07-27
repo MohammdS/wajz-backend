@@ -2,8 +2,7 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("AUTH_MODE", "dev")
-os.environ.setdefault("SECRET_KEY", "test-secret")
-os.environ.setdefault("ADMIN_TOKEN", "test-admin-token")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-32-characters")
 os.environ.setdefault("ADMIN_EMAILS", "admin@wajz.app")
 os.environ.setdefault("ANTHROPIC_API_KEY", "")
 os.environ.setdefault("ZAI_API_KEY", "")

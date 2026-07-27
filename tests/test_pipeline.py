@@ -1,4 +1,5 @@
-from app.models import Article, Story, StoryArticle
+from app.models import Article, Source, Story, StoryArticle
+from app.services.clustering import create_story_from_article
 
 
 def test_pipeline_clusters_same_event(demo_data):
@@ -42,3 +43,28 @@ def test_single_source_story_label(demo_data):
     link = db.query(StoryArticle).filter(StoryArticle.article_id == exoplanet.id).one()
     story = db.get(Story, link.story_id)
     assert story.confidence_label == "single_source"
+
+
+def test_ingested_story_is_published_immediately(db):
+    source = Source(
+        name="Automatic RSS",
+        website_url="https://automatic.example",
+        rss_url="https://automatic.example/feed.xml",
+    )
+    db.add(source)
+    db.flush()
+    article = Article(
+        source_id=source.id,
+        title="Automatically published story",
+        url="https://automatic.example/story",
+        summary="A source-grounded summary.",
+        why_it_matters="It verifies direct publication.",
+        language="en",
+    )
+    db.add(article)
+    db.flush()
+
+    story = create_story_from_article(db, article)
+
+    assert story.status == "published"
+    assert story.published_at is not None

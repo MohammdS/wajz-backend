@@ -1,144 +1,108 @@
-# wajz-backend
+# Wajz backend
 
-Backend for **Wajz (واجِز)** — a calm, trust-first, source-grounded daily news briefing app.
-
-> Stay informed in minutes. No noise. Sources included.
+FastAPI backend for Wajz (واجِز), an Arabic-first, source-grounded news app.
 
 ## Architecture
 
-```
-Flutter app ── HTTPS ──> FastAPI API ──> PostgreSQL / SQLite
-                              │
-              ┌───────────────┴───────────────┐
-        Ingestion worker                AI pipeline
-        (RSS feeds)                     (Anthropic / Z.AI or
-                                         heuristic fallback)
+```text
+Flutter clients -> HTTPS/Caddy -> FastAPI -> PostgreSQL
+                                      |
+                                      +-> Periodic worker
+                                             +-> RSS ingestion
+                                             +-> Anthropic/Gemini/Z.AI
+                                             +-> Arabic translation
 ```
 
-- **Ingestion** fetches RSS feeds from vetted sources, cleans article text.
-- **AI pipeline** classifies (category/region/entities/importance) and
-  summarizes (summary, key facts, why it matters, unclear points) each article,
-  then clusters same-event articles into **stories** and synthesizes a
-  multi-source summary with a confidence label.
-- **Story translations** are stored once per supported language in
-  `story_translations`. APIs select the requested or user's preferred language
-  and fall back to the source language when a translation is unavailable.
-- **Briefings** are finite, per-user, per-day story selections sized by the
-  user's briefing-length preference. Stories must match at least one selected
-  topic or region and are ranked by normalized topic match, region match, and
-  recency within a 36-hour window. The endpoint ends with "You are caught up."
-- AI runs only in the backend (PRD key architecture decision). If no Anthropic
-  or Z.AI API key is configured, a deterministic extractive fallback keeps
-  the product working — it never invents interpretation.
+The periodic worker runs RSS ingestion, article analysis, story synthesis, and
+translation directly. Admin-triggered processing and News Studio operations
+run synchronously.
 
-## Quick start (local, zero setup)
+Only `published` stories are public, eligible for saved-story reads, or added
+to briefings. Seed data is isolated to the demo records created by the seeder.
+
+## Local development
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1          # or: source .venv/bin/activate
-pip install -e .[dev]
-copy .env.example .env               # defaults: SQLite + dev auth
-
-alembic upgrade head                 # create schema
-python -m app.seeds all              # seed sources + offline demo stories
-uvicorn app.main:app --reload        # http://127.0.0.1:8000/docs
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+Copy-Item .env.example .env
+alembic upgrade head
+python -m app.seeds all
+docker compose up --build
 ```
 
-Fetch real news (network required):
+Docker Compose starts PostgreSQL, the API, and the periodic worker. API docs
+are at `http://127.0.0.1:8000/docs`.
+
+For a host-run API, start these separately:
 
 ```powershell
-python -m app.worker                 # ingest + process on an interval
-# or one-off via the API:
-curl -X POST http://127.0.0.1:8000/admin/ingestion/run -H "X-Admin-Token: <ADMIN_TOKEN>"
+uvicorn app.main:app --reload
+python -m app.worker
 ```
 
-## Quick start (Docker)
+## Authentication
+
+- `AUTH_MODE=dev` exposes `/auth/dev-login` for explicit local development.
+- `AUTH_MODE=supabase` verifies asymmetric JWTs through Supabase JWKS and
+  confirms every token with Supabase Auth. This makes deleted or banned users
+  fail immediately instead of remaining active until token expiry.
+- Wajz users are keyed by the stable Supabase subject, not a mutable email.
+- Locally disabled Wajz accounts are rejected after identity verification.
+- Admin APIs require a bearer token and a database-backed `viewer`, `editor`,
+  or `super_admin` role. UI visibility never substitutes for API authorization.
+
+The consumer client supports guests; authentication is required only for
+account-scoped features such as preferences, saved stories, and briefings.
+
+## AI and Arabic operations
+
+Set `AI_PROVIDER` to `anthropic`, `gemini`, `zai`, `heuristic`, or `auto`.
+Provider keys stay on the backend.
+
+Gemini configuration:
+
+```dotenv
+AI_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+Gemini analysis, synthesis, and translation use structured JSON responses.
+`CONTENT_LANGUAGES=en,ar` and `TRANSLATION_LANGUAGES=ar` make Arabic an
+explicit operational target. Translation jobs are bounded by
+`TRANSLATION_BATCH_SIZE` and exclude archived or rejected stories.
+
+## Production
+
+Copy `.env.production.example` outside version control, replace every
+placeholder, then:
 
 ```bash
-docker compose up --build            # API on :8000 + PostgreSQL + worker
+docker compose --env-file .env.production -f docker-compose.prod.yml config
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
-## API overview
+The production stack includes PostgreSQL, the API, periodic worker, and Caddy.
+Caddy provisions and renews HTTPS automatically.
+Production startup fails closed when auth, database, secrets, HTTPS CORS,
+metrics protection, Arabic operations, or the selected AI provider are
+misconfigured.
 
-| Endpoint | Auth | Purpose |
-|---|---|---|
-| `GET /health` | — | liveness |
-| `GET /health/live`, `GET /health/ready` | — | external liveness + database readiness probes |
-| `GET /metrics` | optional `X-Metrics-Token` | Prometheus metrics |
-| `GET /categories`, `GET /sources` | — | reference data |
-| `GET /stories`, `GET /stories/{id}` | optional | story feed + detail (sources always included) |
-| `POST /auth/dev-login` | — | local-dev JWT (AUTH_MODE=dev only) |
-| `GET /me`, `GET/PUT /me/preferences` | bearer | profile + preferences |
-| `GET /me/briefing/today` | bearer | finite daily briefing |
-| `POST /me/stories/{id}/opened` | bearer | record per-user story progress |
-| `GET/POST/DELETE /me/saved-stories[/{id}]` | bearer | read-later |
-| `POST /admin/sources`, `PUT /admin/sources/{id}` | X-Admin-Token | source management |
-| `POST /admin/ingestion/run`, `POST /admin/processing/run` | X-Admin-Token | manual triggers |
-| `POST /admin/translations/run` | X-Admin-Token | backfill missing story translations |
-| `GET /admin/ingestion-runs`, `GET /admin/ai-runs` | X-Admin-Token | observability |
+Never commit `.env.production`, provider keys, Supabase secrets, or database
+credentials. The mobile/web clients receive only the Supabase publishable key.
 
-Interactive docs: `http://127.0.0.1:8000/docs`.
-
-## Auth modes
-
-- `AUTH_MODE=dev` — `POST /auth/dev-login {email}` issues an HS256 JWT signed
-  with `SECRET_KEY`. For local development only.
-- `AUTH_MODE=supabase` — bearer tokens are verified against
-  `SUPABASE_JWT_SECRET`; users are auto-provisioned from token claims.
-
-Secrets (LLM keys, JWT secrets, admin token) live only in backend env vars —
-never in the mobile app.
-
-## Admin dashboard
-
-Admin access uses the normal bearer token plus a backend-stored role:
-`viewer`, `editor`, or `super_admin`. Configure the initial super-admin email
-with `ADMIN_EMAILS`; subsequent role changes are restricted to `super_admin`.
-Every admin write is recorded in `audit_logs`.
-
-Build the separate Flutter Web entry point from `wajz-mobile`:
+## Validation
 
 ```powershell
-flutter build web -t lib/main_admin.dart
+ruff check app tests
+pytest -q
+alembic upgrade head
+alembic check
+docker compose config --quiet
+docker build -t wajz-backend:local .
 ```
 
-The consumer app continues to use `lib/main.dart`. AI/RSS stories enter
-`pending_review`; only an explicit admin publish action exposes them publicly.
-
-## Observability
-
-- Every response includes `X-Request-ID`; an incoming safe request ID is preserved.
-- `/metrics` exports bounded-cardinality HTTP, AI, and ingestion Prometheus metrics.
-- `SENTRY_DSN` enables FastAPI/worker crash reporting without sending user PII.
-- `OTEL_EXPORTER_OTLP_ENDPOINT` enables FastAPI and SQLAlchemy trace export over OTLP/HTTP.
-- `ALERT_WEBHOOK_URL` sends non-blocking ingestion and worker failure alerts. Set
-  `ALERT_WEBHOOK_TOKEN` when the receiver requires a bearer token.
-- External monitors should probe `/health/live` for process health and
-  `/health/ready` for database readiness.
-
-All external exporters are disabled by default for local development.
-
-## Tests
-
-```powershell
-pytest
-```
-
-Covers: API contract, auth/ownership, preference validation, briefing
-generation, saved stories, clustering of same-event articles, confidence
-labels, rate limiting, cleaning, and the heuristic provider's grounding rules.
-
-## Configuration
-
-See [.env.example](.env.example). Notable:
-
-- `DATABASE_URL` — SQLite by default; PostgreSQL in docker-compose.
-- `AI_PROVIDER` — `auto`, `anthropic`, `zai`, or `heuristic`. In `auto`,
-  Anthropic is preferred when both provider keys are present.
-- `ANTHROPIC_API_KEY` / `AI_MODEL` — Anthropic credentials and model.
-- `ZAI_API_KEY` / `ZAI_MODEL` — Z.AI credentials and GLM model
-  (`glm-4.5-air` by default).
-- `ZAI_BASE_URL` — defaults to Z.AI's OpenAI-compatible API endpoint.
-- `CONTENT_LANGUAGES` — comma-separated stored story languages (`en,ar` by default).
-- `RATE_LIMIT_*` — in-memory fixed-window limiter (single-process MVP; move to
-  Redis when scaling out).
+CI runs this matrix on pull requests and `main`. Version tags publish a
+provenance- and SBOM-enabled image to GHCR.

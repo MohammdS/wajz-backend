@@ -73,7 +73,7 @@ def generate_story_translations(
     store_source_translation(db, story)
     db.commit()
 
-    for language in get_settings().supported_content_languages:
+    for language in get_settings().supported_translation_languages:
         if language == source_language:
             continue
         run = AIRun(
@@ -116,8 +116,15 @@ def generate_missing_translations(db: Session) -> dict[str, int]:
     from app.services.ai import get_provider
 
     provider = get_provider()
-    languages = get_settings().supported_content_languages
-    stories = db.query(Story).all()
+    settings = get_settings()
+    languages = settings.supported_translation_languages
+    stories = (
+        db.query(Story)
+        .filter(Story.status.in_(["pending_review", "published"]))
+        .order_by(Story.last_updated_at.desc())
+        .limit(settings.translation_batch_size)
+        .all()
+    )
     attempted = completed = 0
     for story in stories:
         existing = {
@@ -126,7 +133,8 @@ def generate_missing_translations(db: Session) -> dict[str, int]:
             .filter(StoryTranslation.story_id == story.id)
             .all()
         }
-        if all(language in existing for language in languages):
+        required = {story.language or "en", *languages}
+        if required.issubset(existing):
             continue
         attempted += 1
         generate_story_translations(db, story, provider)
@@ -136,7 +144,7 @@ def generate_missing_translations(db: Session) -> dict[str, int]:
             .filter(StoryTranslation.story_id == story.id)
             .all()
         }
-        if all(language in refreshed for language in languages):
+        if required.issubset(refreshed):
             completed += 1
     return {
         "stories_checked": len(stories),

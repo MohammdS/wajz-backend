@@ -28,6 +28,7 @@ class User(Base, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(255))
     preferred_language: Mapped[str] = mapped_column(String(8), default="en")
     auth_provider: Mapped[str] = mapped_column(String(32), default="dev")
+    auth_subject: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
     admin_role: Mapped[str | None] = mapped_column(String(24), index=True)
     account_status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime)

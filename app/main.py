@@ -11,6 +11,7 @@ from app.routers import admin, auth, health, me, public
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 settings = get_settings()
+settings.validate_runtime()
 
 app = FastAPI(
     title=settings.app_name,

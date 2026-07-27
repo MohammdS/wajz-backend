@@ -21,4 +21,6 @@ def dev_login(body: DevLoginRequest, db: Session = Depends(get_db)) -> TokenResp
     if settings.auth_mode != "dev":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     user = get_or_create_user(db, body.email, body.display_name, "dev")
+    if user.account_status != "active":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is disabled")
     return TokenResponse(access_token=create_dev_token(user))

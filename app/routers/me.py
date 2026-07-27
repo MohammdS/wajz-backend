@@ -123,7 +123,13 @@ def today_briefing(
 ) -> BriefingResponse:
     briefing = get_or_create_today_briefing(db, user)
     saved_ids = saved_story_ids(db, user)
-    story_ids = [link.story_id for link in briefing.stories]
+    stories = [
+        story
+        for link in briefing.stories
+        if (story := db.get(Story, link.story_id)) is not None
+        and story.status == "published"
+    ]
+    story_ids = [story.id for story in stories]
     opened_ids = {
         row.story_id
         for row in db.query(OpenedStory)
@@ -134,14 +140,12 @@ def today_briefing(
         .all()
     } if story_ids else set()
     items = []
-    for link in briefing.stories:
-        story = db.get(Story, link.story_id)
-        if story is not None:
-            items.append(
-                story_to_list_item(
-                    db, story, saved_ids, language or user.preferred_language
-                )
+    for story in stories:
+        items.append(
+            story_to_list_item(
+                db, story, saved_ids, language or user.preferred_language
             )
+        )
     return BriefingResponse(
         date=briefing.briefing_date,
         briefing_length=briefing.briefing_length,
@@ -159,7 +163,8 @@ def mark_story_opened(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    if db.get(Story, story_id) is None:
+    story = db.get(Story, story_id)
+    if story is None or story.status != "published":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Story not found")
     existing = (
         db.query(OpenedStory)
@@ -187,7 +192,9 @@ def list_saved(
 ) -> list[SavedStoryOut]:
     rows = (
         db.query(SavedStory)
+        .join(Story, Story.id == SavedStory.story_id)
         .filter(SavedStory.user_id == user.id)
+        .filter(Story.status == "published")
         .order_by(SavedStory.saved_at.desc())
         .all()
     )
@@ -195,7 +202,7 @@ def list_saved(
     result = []
     for row in rows:
         story = db.get(Story, row.story_id)
-        if story is not None:
+        if story is not None and story.status == "published":
             result.append(
                 SavedStoryOut(
                     saved_at=row.saved_at,
@@ -211,7 +218,8 @@ def list_saved(
 def save_story(
     story_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict:
-    if db.get(Story, story_id) is None:
+    story = db.get(Story, story_id)
+    if story is None or story.status != "published":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Story not found")
     existing = (
         db.query(SavedStory)

@@ -1,6 +1,6 @@
 """AI provider abstraction.
 
-The pipeline supports source-grounded Anthropic and Z.AI providers.
+The pipeline supports source-grounded Anthropic, Google Gemini, and Z.AI providers.
 HeuristicProvider is the deterministic fallback (PRD 21.2: the app must still
 work if AI processing fails or is unconfigured).
 """
@@ -79,6 +79,16 @@ def get_provider() -> AIProvider:
         from app.services.ai.anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(api_key=settings.anthropic_api_key, model=settings.ai_model)
+
+    if provider == "gemini" or (provider == "auto" and settings.gemini_api_key):
+        if not settings.gemini_api_key:
+            raise ValueError("AI_PROVIDER=gemini requires GEMINI_API_KEY")
+        from app.services.ai.gemini_provider import GeminiProvider
+
+        return GeminiProvider(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+        )
 
     if provider == "zai" or (provider == "auto" and settings.zai_api_key):
         if not settings.zai_api_key:

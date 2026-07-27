@@ -1,3 +1,4 @@
+from app.models import SavedStory, Story
 from app.schemas import CATEGORIES, REGIONS
 
 
@@ -172,6 +173,71 @@ def test_saved_stories_flow(client, auth_headers, demo_data):
 
 def test_save_unknown_story_404(client, auth_headers):
     assert client.post("/me/saved-stories/nope", headers=auth_headers).status_code == 404
+
+
+def test_archived_story_is_hidden_but_can_be_unsaved(
+    client,
+    auth_headers,
+    demo_data,
+    db,
+):
+    story_id = client.get("/stories").json()["items"][0]["id"]
+    assert client.post(
+        f"/me/saved-stories/{story_id}",
+        headers=auth_headers,
+    ).status_code == 201
+
+    story = db.get(Story, story_id)
+    story.status = "archived"
+    db.commit()
+
+    assert client.get("/me/saved-stories", headers=auth_headers).json() == []
+    assert client.post(
+        f"/me/saved-stories/{story_id}",
+        headers=auth_headers,
+    ).status_code == 404
+    assert client.post(
+        f"/me/stories/{story_id}/opened",
+        headers=auth_headers,
+    ).status_code == 404
+    assert client.delete(
+        f"/me/saved-stories/{story_id}",
+        headers=auth_headers,
+    ).status_code == 200
+    assert (
+        db.query(SavedStory)
+        .filter(SavedStory.story_id == story_id)
+        .first()
+        is None
+    )
+
+
+def test_briefing_rebuilds_after_story_is_archived(
+    client,
+    auth_headers,
+    demo_data,
+    db,
+):
+    _set_briefing_preferences(client, auth_headers)
+    first = client.get("/me/briefing/today", headers=auth_headers).json()
+    archived_id = first["stories"][0]["id"]
+    db.get(Story, archived_id).status = "archived"
+    db.commit()
+
+    rebuilt = client.get("/me/briefing/today", headers=auth_headers).json()
+
+    assert archived_id not in {story["id"] for story in rebuilt["stories"]}
+    returned_ids = [story["id"] for story in rebuilt["stories"]]
+    if returned_ids:
+        assert (
+            db.query(Story)
+            .filter(
+                Story.id.in_(returned_ids),
+                Story.status != "published",
+            )
+            .count()
+            == 0
+        )
 
 
 def test_saved_stories_are_per_user(client, auth_headers, demo_data):
