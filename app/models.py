@@ -1,7 +1,17 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,7 +39,6 @@ class User(Base, TimestampMixin):
     preferred_language: Mapped[str] = mapped_column(String(8), default="en")
     auth_provider: Mapped[str] = mapped_column(String(32), default="dev")
     auth_subject: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
-    admin_role: Mapped[str | None] = mapped_column(String(24), index=True)
     account_status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -62,7 +71,9 @@ class Source(Base, TimestampMixin):
     rss_url: Mapped[str] = mapped_column(String(512))
     country: Mapped[str | None] = mapped_column(String(64))
     language: Mapped[str] = mapped_column(String(8), default="en")
-    reliability_level: Mapped[str] = mapped_column(String(16), default="unknown")  # high|medium|low|unknown
+    reliability_level: Mapped[str] = mapped_column(
+        String(16), default="unknown"
+    )  # high|medium|low|unknown
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text)
     region: Mapped[str | None] = mapped_column(String(64), index=True)
@@ -131,8 +142,8 @@ class Story(Base, TimestampMixin):
     entities: Mapped[list] = mapped_column(JSON, default=list)
     last_updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending_review", index=True)
-    editor_notes: Mapped[str | None] = mapped_column(Text)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    editor_notes: Mapped[str | None] = mapped_column(Text)
     published_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
 
     articles: Mapped[list["StoryArticle"]] = relationship(
@@ -162,6 +173,54 @@ class StoryTranslation(Base, TimestampMixin):
     provider: Mapped[str | None] = mapped_column(String(64))
 
     story: Mapped[Story] = relationship(back_populates="translations")
+
+
+class OngoingTopic(Base, TimestampMixin):
+    __tablename__ = "ongoing_topics"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    category: Mapped[str | None] = mapped_column(String(32), index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    published_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+
+    translations: Mapped[list["OngoingTopicTranslation"]] = relationship(
+        back_populates="topic", cascade="all, delete-orphan"
+    )
+    stories: Mapped[list["OngoingTopicStory"]] = relationship(
+        back_populates="topic", cascade="all, delete-orphan"
+    )
+
+
+class OngoingTopicTranslation(Base, TimestampMixin):
+    __tablename__ = "ongoing_topic_translations"
+    __table_args__ = (
+        UniqueConstraint("topic_id", "language", name="uq_ongoing_topic_translation_language"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    topic_id: Mapped[str] = mapped_column(ForeignKey("ongoing_topics.id"), index=True)
+    language: Mapped[str] = mapped_column(String(8), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+
+    topic: Mapped[OngoingTopic] = relationship(back_populates="translations")
+
+
+class OngoingTopicStory(Base):
+    __tablename__ = "ongoing_topic_stories"
+
+    topic_id: Mapped[str] = mapped_column(ForeignKey("ongoing_topics.id"), primary_key=True)
+    story_id: Mapped[str] = mapped_column(ForeignKey("stories.id"), primary_key=True, index=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    added_by: Mapped[str] = mapped_column(String(16), default="manual")
+    match_score: Mapped[float | None] = mapped_column(Float)
+    match_reason: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    topic: Mapped[OngoingTopic] = relationship(back_populates="stories")
+    story: Mapped[Story] = relationship()
 
 
 class StoryArticle(Base):
@@ -240,30 +299,110 @@ class IngestionRun(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    status: Mapped[str] = mapped_column(String(16), default="running")  # running|success|partial|error
+    status: Mapped[str] = mapped_column(
+        String(16), default="running"
+    )  # running|success|partial|error
     sources_total: Mapped[int] = mapped_column(Integer, default=0)
     sources_failed: Mapped[int] = mapped_column(Integer, default=0)
     articles_fetched: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
 
 
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
+class AdminAuditLog(Base):
+    __tablename__ = "admin_audit_logs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     actor_email: Mapped[str] = mapped_column(String(255))
-    actor_role: Mapped[str] = mapped_column(String(24))
     action: Mapped[str] = mapped_column(String(80), index=True)
-    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    target_type: Mapped[str] = mapped_column(String(40), index=True)
     target_id: Mapped[str | None] = mapped_column(String(64), index=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
+    request_id: Mapped[str | None] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
-class AdminSetting(Base, TimestampMixin):
-    __tablename__ = "admin_settings"
+class AdminJob(Base, TimestampMixin):
+    __tablename__ = "admin_jobs"
 
-    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    job_type: Mapped[str] = mapped_column(String(48), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    requested_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    arguments: Mapped[dict] = mapped_column(JSON, default=dict)
+    progress_current: Mapped[int] = mapped_column(Integer, default=0)
+    progress_total: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class OperationalSetting(Base, TimestampMixin):
+    __tablename__ = "operational_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
-    description: Mapped[str | None] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+
+
+class AnalyticsInstallation(Base):
+    __tablename__ = "analytics_installations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class PrivacyAcknowledgement(Base):
+    __tablename__ = "privacy_acknowledgements"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(
+        ForeignKey("analytics_installations.id"), index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    policy_version: Mapped[str] = mapped_column(String(32), index=True)
+    locale: Mapped[str] = mapped_column(String(8), default="ar")
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(
+        ForeignKey("analytics_installations.id"), index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(48), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(32), index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    properties: Mapped[dict] = mapped_column(JSON, default=dict)
+    locale: Mapped[str | None] = mapped_column(String(8), index=True)
+    platform: Mapped[str | None] = mapped_column(String(16), index=True)
+    app_version: Mapped[str | None] = mapped_column(String(24))
+
+
+class AnalyticsDailyAggregate(Base):
+    __tablename__ = "analytics_daily_aggregates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    metric: Mapped[str] = mapped_column(String(48), index=True)
+    dimensions: Mapped[dict] = mapped_column(JSON, default=dict)
+    value: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

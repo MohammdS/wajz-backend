@@ -15,7 +15,17 @@ _BOILERPLATE_PATTERNS = [
     re.compile(r"share this article", re.I),
 ]
 
-_REMOVED_TAGS = ["script", "style", "nav", "aside", "footer", "header", "form", "iframe", "noscript"]
+_REMOVED_TAGS = [
+    "script",
+    "style",
+    "nav",
+    "aside",
+    "footer",
+    "header",
+    "form",
+    "iframe",
+    "noscript",
+]
 
 
 def html_to_text(html: str) -> str:

@@ -82,10 +82,14 @@ def update_preferences(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid notification preference")
     invalid_topics = [t for t in body.topics if t not in CATEGORIES]
     if invalid_topics:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid topics: {invalid_topics}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid topics: {invalid_topics}"
+        )
     invalid_regions = [r for r in body.regions if r not in REGIONS]
     if invalid_regions:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid regions: {invalid_regions}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid regions: {invalid_regions}"
+        )
 
     prefs = _get_prefs(db, user)
     rebuild_briefing = (
@@ -126,26 +130,25 @@ def today_briefing(
     stories = [
         story
         for link in briefing.stories
-        if (story := db.get(Story, link.story_id)) is not None
-        and story.status == "published"
+        if (story := db.get(Story, link.story_id)) is not None and story.status == "published"
     ]
     story_ids = [story.id for story in stories]
-    opened_ids = {
-        row.story_id
-        for row in db.query(OpenedStory)
-        .filter(
-            OpenedStory.user_id == user.id,
-            OpenedStory.story_id.in_(story_ids),
-        )
-        .all()
-    } if story_ids else set()
+    opened_ids = (
+        {
+            row.story_id
+            for row in db.query(OpenedStory)
+            .filter(
+                OpenedStory.user_id == user.id,
+                OpenedStory.story_id.in_(story_ids),
+            )
+            .all()
+        }
+        if story_ids
+        else set()
+    )
     items = []
     for story in stories:
-        items.append(
-            story_to_list_item(
-                db, story, saved_ids, language or user.preferred_language
-            )
-        )
+        items.append(story_to_list_item(db, story, saved_ids, language or user.preferred_language))
     return BriefingResponse(
         date=briefing.briefing_date,
         briefing_length=briefing.briefing_length,

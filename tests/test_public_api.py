@@ -45,14 +45,13 @@ def test_stories_return_stored_arabic_translation(client, demo_data):
     arabic = client.get("/stories", params={"language": "ar"}).json()["items"]
     english_by_id = {item["id"]: item for item in english}
     translated = [
-        item for item in arabic
+        item
+        for item in arabic
         if item["content_language"] == "ar"
         and item["headline"] != english_by_id[item["id"]]["headline"]
     ]
     assert translated
 
-    detail = client.get(
-        f"/stories/{translated[0]['id']}", params={"language": "ar"}
-    ).json()
+    detail = client.get(f"/stories/{translated[0]['id']}", params={"language": "ar"}).json()
     assert detail["content_language"] == "ar"
     assert detail["summary"]

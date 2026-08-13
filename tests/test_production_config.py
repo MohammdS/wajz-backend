@@ -23,13 +23,15 @@ def test_production_configuration_accepts_hardened_values():
         supabase_url="https://project.supabase.co",
         supabase_publishable_key="publishable-key",
         database_url="postgresql+psycopg2://wajz:secret@db/wajz",
-        admin_emails="security@wajz.app",
         cors_origins="https://app.wajz.app,https://admin.wajz.app",
         metrics_token="metrics-secret",
         ai_provider="gemini",
         gemini_api_key="gemini-secret",
         content_languages="en,ar",
         translation_languages="ar",
+        admin_owner_email="owner@wajz.app",
+        admin_require_mfa=True,
+        admin_origin="https://admin.wajz.app",
     )
 
     settings.validate_runtime()

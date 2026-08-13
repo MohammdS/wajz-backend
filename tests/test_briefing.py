@@ -117,8 +117,11 @@ def test_select_briefing_is_empty_without_preferences(db):
     db.commit()
 
     assert select_briefing_stories(db, None, count=10) == []
-    assert select_briefing_stories(
-        db,
-        UserPreferences(topics=[], regions=[]),
-        count=10,
-    ) == []
+    assert (
+        select_briefing_stories(
+            db,
+            UserPreferences(topics=[], regions=[]),
+            count=10,
+        )
+        == []
+    )

@@ -17,21 +17,65 @@ from app.models import Article, Story, StoryArticle, utcnow
 
 _TOKEN_PATTERN = re.compile(r"[a-zA-Z֐-׿؀-ۿ]{2,}")
 _STOPWORDS = {
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
-    "with", "by", "from", "as", "is", "are", "was", "were", "be", "been", "has",
-    "have", "had", "it", "its", "this", "that", "these", "those", "he", "she",
-    "they", "we", "you", "his", "her", "their", "will", "would", "could", "after",
-    "before", "over", "under", "into", "about", "than", "then", "new", "says",
-    "said", "say",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "has",
+    "have",
+    "had",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "he",
+    "she",
+    "they",
+    "we",
+    "you",
+    "his",
+    "her",
+    "their",
+    "will",
+    "would",
+    "could",
+    "after",
+    "before",
+    "over",
+    "under",
+    "into",
+    "about",
+    "than",
+    "then",
+    "new",
+    "says",
+    "said",
+    "say",
 }
 
 
 def tokenize(text: str) -> list[str]:
-    return [
-        t.lower()
-        for t in _TOKEN_PATTERN.findall(text or "")
-        if t.lower() not in _STOPWORDS
-    ]
+    return [t.lower() for t in _TOKEN_PATTERN.findall(text or "") if t.lower() not in _STOPWORDS]
 
 
 def cosine_similarity(a: Counter, b: Counter) -> float:

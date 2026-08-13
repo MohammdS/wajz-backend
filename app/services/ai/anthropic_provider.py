@@ -28,9 +28,17 @@ _ANALYZE_SCHEMA = {
         "is_opinion": {"type": "boolean"},
     },
     "required": [
-        "category", "region", "language", "topic_tags", "entities",
-        "importance_score", "short_summary", "key_facts", "why_it_matters",
-        "unclear_points", "is_opinion",
+        "category",
+        "region",
+        "language",
+        "topic_tags",
+        "entities",
+        "importance_score",
+        "short_summary",
+        "key_facts",
+        "why_it_matters",
+        "unclear_points",
+        "is_opinion",
     ],
     "additionalProperties": False,
 }
@@ -58,8 +66,13 @@ _SYNTH_SCHEMA = {
         },
     },
     "required": [
-        "headline", "summary", "what_happened", "why_it_matters",
-        "key_facts", "unclear_points", "source_comparison",
+        "headline",
+        "summary",
+        "what_happened",
+        "why_it_matters",
+        "key_facts",
+        "unclear_points",
+        "source_comparison",
     ],
     "additionalProperties": False,
 }
@@ -73,8 +86,7 @@ _GROUNDING_RULES = (
 
 _ANALYZE_SYSTEM = (
     "You are the background news-analysis engine for Wajz, a calm, trust-first "
-    "news briefing app. You classify and summarize a single news article. "
-    + _GROUNDING_RULES
+    "news briefing app. You classify and summarize a single news article. " + _GROUNDING_RULES
 )
 
 _SYNTH_SYSTEM = (
@@ -141,9 +153,7 @@ class AnthropicProvider(AIProvider):
                 f"Summary: {a.get('summary') or ''}\n"
                 f"Text: {(a.get('text') or '')[:per_source_budget]}"
             )
-        prompt = (
-            f"{len(articles)} articles covering the same event:\n\n" + "\n\n".join(parts)
-        )
+        prompt = f"{len(articles)} articles covering the same event:\n\n" + "\n\n".join(parts)
         data = self._request_json(_SYNTH_SYSTEM, prompt, _SYNTH_SCHEMA)
         return StorySynthesis(
             headline=data["headline"],

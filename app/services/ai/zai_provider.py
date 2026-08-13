@@ -80,9 +80,7 @@ class ZAIProvider(AIProvider):
             language=(data.get("language") or "en")[:8],
             topic_tags=list(data.get("topic_tags") or [])[:8],
             entities=list(data.get("entities") or [])[:12],
-            importance_score=max(
-                0.0, min(1.0, float(data.get("importance_score", 0.5)))
-            ),
+            importance_score=max(0.0, min(1.0, float(data.get("importance_score", 0.5)))),
             short_summary=str(data.get("short_summary") or ""),
             key_facts=list(data.get("key_facts") or [])[:6],
             why_it_matters=str(data.get("why_it_matters") or ""),
@@ -102,8 +100,7 @@ class ZAIProvider(AIProvider):
         ]
         data = self._request_json(
             _SYNTH_SYSTEM,
-            f"{len(articles)} articles covering the same event:\n\n"
-            + "\n\n".join(parts),
+            f"{len(articles)} articles covering the same event:\n\n" + "\n\n".join(parts),
             _SYNTH_SCHEMA,
         )
         return self._story_synthesis(data)
@@ -122,9 +119,7 @@ class ZAIProvider(AIProvider):
             "except source names inside source_comparison, which must remain unchanged.\n\n"
             f"{json.dumps(story.__dict__, ensure_ascii=False)}"
         )
-        return self._story_synthesis(
-            self._request_json(_GROUNDING_RULES, prompt, _SYNTH_SCHEMA)
-        )
+        return self._story_synthesis(self._request_json(_GROUNDING_RULES, prompt, _SYNTH_SCHEMA))
 
     @staticmethod
     def _story_synthesis(data: dict) -> StorySynthesis:

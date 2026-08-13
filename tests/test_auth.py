@@ -33,7 +33,6 @@ def test_disabled_supabase_user_is_rejected_after_valid_token(client, db, monkey
         "get_settings",
         lambda: SimpleNamespace(
             auth_mode="supabase",
-            bootstrap_admin_emails=set(),
         ),
     )
     monkeypatch.setattr(
@@ -147,7 +146,6 @@ def test_supabase_identity_uses_subject_and_updates_email(client, db, monkeypatc
         "get_settings",
         lambda: SimpleNamespace(
             auth_mode="supabase",
-            bootstrap_admin_emails=set(),
         ),
     )
     monkeypatch.setattr(

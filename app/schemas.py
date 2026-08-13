@@ -46,6 +46,7 @@ CONFIDENCE_DISPLAY = {
 
 # ---------- Auth ----------
 
+
 class DevLoginRequest(BaseModel):
     email: EmailStr
     display_name: str | None = None
@@ -57,6 +58,7 @@ class TokenResponse(BaseModel):
 
 
 # ---------- Users / preferences ----------
+
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -83,6 +85,7 @@ class PreferencesOut(PreferencesIn):
 
 
 # ---------- Sources ----------
+
 
 class SourceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -119,6 +122,7 @@ class SourceUpdate(BaseModel):
 
 
 # ---------- Stories ----------
+
 
 class StorySourceLink(BaseModel):
     name: str
@@ -175,7 +179,34 @@ class StoryListResponse(BaseModel):
     offset: int
 
 
+# ---------- Ongoing topics ----------
+
+
+class OngoingTopicListItem(BaseModel):
+    id: str
+    title: str
+    description: str
+    category: str | None
+    story_count: int
+    image_url: str | None = None
+    last_updated_at: datetime
+    expires_at: datetime | None
+    content_language: str
+
+
+class OngoingTopicListResponse(BaseModel):
+    items: list[OngoingTopicListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class OngoingTopicDetail(OngoingTopicListItem):
+    stories: StoryListResponse
+
+
 # ---------- Briefing ----------
+
 
 class BriefingResponse(BaseModel):
     date: str
@@ -189,6 +220,7 @@ class BriefingResponse(BaseModel):
 
 
 # ---------- Saved ----------
+
 
 class SavedStoryOut(BaseModel):
     saved_at: datetime

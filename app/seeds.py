@@ -10,7 +10,16 @@ import sys
 from datetime import timedelta
 
 from app.database import Base, SessionLocal, engine
-from app.models import Article, Source, Story, StoryArticle, utcnow
+from app.models import (
+    Article,
+    OngoingTopic,
+    OngoingTopicStory,
+    OngoingTopicTranslation,
+    Source,
+    Story,
+    StoryArticle,
+    utcnow,
+)
 from app.services.ai.base import StorySynthesis
 from app.services.cleaning import clean_text
 from app.services.pipeline import process_pending_articles
@@ -225,9 +234,7 @@ DEMO_ARABIC_TRANSLATIONS = {
             "أعلن علماء يستخدمون تلسكوب جيمس ويب رصد بخار ماء في غلاف كوكب "
             "خارج المجموعة الشمسية يبعد 120 سنة ضوئية."
         ),
-        what_happened=(
-            "رصد الباحثون بخار ماء على كوكب يقع ضمن المنطقة الصالحة للحياة حول نجمه."
-        ),
+        what_happened=("رصد الباحثون بخار ماء على كوكب يقع ضمن المنطقة الصالحة للحياة حول نجمه."),
         why_it_matters="تساعد الملاحظة العلماء على دراسة أغلفة الكواكب البعيدة.",
         key_facts=[
             "يبعد الكوكب نحو 120 سنة ضوئية.",
@@ -241,9 +248,7 @@ DEMO_ARABIC_TRANSLATIONS = {
             "اجتمع قادة من الشرق الأوسط في عمّان لقمة تستمر يومين وتركز على "
             "التجارة الإقليمية وأمن المياه."
         ),
-        what_happened=(
-            "ناقش المشاركون ممراً للسكك الحديدية ومشروعات طاقة عابرة للحدود."
-        ),
+        what_happened=("ناقش المشاركون ممراً للسكك الحديدية ومشروعات طاقة عابرة للحدود."),
         why_it_matters="قد تعزز الاتفاقات المحتملة الترابط الاقتصادي بين دول المنطقة.",
         key_facts=[
             "تستمر القمة يومين في عمّان.",
@@ -257,8 +262,7 @@ DEMO_ARABIC_TRANSLATIONS = {
             "مقارنة بالعام السابق، مع تركّز الوظائف في الأمن السيبراني والذكاء الاصطناعي."
         ),
         what_happened=(
-            "سجل التقرير 12,400 وظيفة جديدة وارتفاع تمويل الشركات الناشئة إلى "
-            "2.1 مليار دولار."
+            "سجل التقرير 12,400 وظيفة جديدة وارتفاع تمويل الشركات الناشئة إلى 2.1 مليار دولار."
         ),
         why_it_matters="قد يشير التعافي إلى عودة ثقة المستثمرين في القطاع.",
         key_facts=[
@@ -321,6 +325,7 @@ def seed_demo(db) -> None:
         story.published_at = utcnow()
     db.commit()
     seed_demo_translations(db)
+    seed_demo_ongoing_topic(db, demo_story_ids)
     print(f"Pipeline: {result}")
 
 
@@ -334,11 +339,7 @@ def seed_demo_translations(db) -> None:
         )
         if key is None:
             continue
-        link = (
-            db.query(StoryArticle)
-            .filter(StoryArticle.article_id == article.id)
-            .first()
-        )
+        link = db.query(StoryArticle).filter(StoryArticle.article_id == article.id).first()
         if link is None:
             continue
         story = link.story
@@ -352,6 +353,70 @@ def seed_demo_translations(db) -> None:
             "reviewed-demo",
         )
         translated_story_ids.add(story.id)
+    db.commit()
+
+
+def seed_demo_ongoing_topic(db, demo_story_ids: set[str]) -> None:
+    """Create one deterministic topic hub from the isolated demo stories."""
+    title_en = "Technology in transition"
+    translation = (
+        db.query(OngoingTopicTranslation)
+        .filter(
+            OngoingTopicTranslation.language == "en",
+            OngoingTopicTranslation.title == title_en,
+        )
+        .first()
+    )
+    topic = (
+        translation.topic
+        if translation
+        else OngoingTopic(
+            category="Technology",
+            priority=100,
+            status="published",
+            published_at=utcnow(),
+        )
+    )
+    if translation is None:
+        db.add(topic)
+        db.flush()
+        db.add_all(
+            [
+                OngoingTopicTranslation(
+                    topic_id=topic.id,
+                    language="en",
+                    title=title_en,
+                    description=(
+                        "Follow the latest Wajz stories on technology policy, "
+                        "artificial intelligence, and the changing technology economy."
+                    ),
+                ),
+                OngoingTopicTranslation(
+                    topic_id=topic.id,
+                    language="ar",
+                    title="تحولات قطاع التكنولوجيا",
+                    description=(
+                        "تابع أحدث قصص واجِز حول سياسات التكنولوجيا والذكاء "
+                        "الاصطناعي والاقتصاد التقني المتغير."
+                    ),
+                ),
+            ]
+        )
+    topic_story_ids = {
+        row.story_id
+        for row in db.query(OngoingTopicStory).filter(OngoingTopicStory.topic_id == topic.id).all()
+    }
+    technology_story_ids = {
+        story.id
+        for story in db.query(Story)
+        .filter(
+            Story.id.in_(demo_story_ids),
+            Story.category == "Technology",
+        )
+        .all()
+    }
+    for story_id in technology_story_ids - topic_story_ids:
+        db.add(OngoingTopicStory(topic_id=topic.id, story_id=story_id))
     db.commit()
 
 

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ def create_dev_token(user: User) -> str:
         "email": user.email,
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.token_expiry_hours),
         "iss": "wajz-dev",
+        "aal": "aal1",
     }
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
@@ -55,7 +56,7 @@ def _decode_supabase_token(token: str) -> dict:
             cache_keys=True,
             lifespan=600,
         ).get_signing_key_from_jwt(token)
-        jwt.decode(
+        verified_claims = jwt.decode(
             token,
             signing_key.key,
             algorithms=[algorithm],
@@ -98,11 +99,13 @@ def _decode_supabase_token(token: str) -> dict:
         is_banned = True
     if not user.get("id") or not user.get("email") or is_banned:
         raise jwt.InvalidTokenError("Supabase user is disabled or incomplete")
+    token_claims = jwt.decode(token, options={"verify_signature": False})
     return {
         "sub": user["id"],
         "email": user["email"],
         "user_metadata": user.get("user_metadata") or {},
         "app_metadata": user.get("app_metadata") or {},
+        "aal": token_claims.get("aal") or locals().get("verified_claims", {}).get("aal"),
     }
 
 
@@ -114,7 +117,6 @@ def get_or_create_user(
     *,
     auth_subject: str | None = None,
 ) -> User:
-    settings = get_settings()
     normalized_email = email.strip().lower()
     user = None
     if auth_subject:
@@ -122,17 +124,11 @@ def get_or_create_user(
     if user is None:
         user = db.query(User).filter(User.email == normalized_email).first()
     if user is None:
-        role = (
-            "super_admin"
-            if normalized_email in settings.bootstrap_admin_emails
-            else None
-        )
         user = User(
             email=normalized_email,
             display_name=display_name,
             auth_provider=provider,
             auth_subject=auth_subject,
-            admin_role=role,
         )
         db.add(user)
         db.flush()
@@ -196,23 +192,22 @@ def get_current_user(
     return user
 
 
-ADMIN_ROLES = {"viewer", "editor", "super_admin"}
-ROLE_LEVEL = {"viewer": 1, "editor": 2, "super_admin": 3}
-
-
-def require_admin(user: User = Depends(get_current_user)) -> User:
-    if user.admin_role not in ADMIN_ROLES:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin authorization required")
+def require_owner(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """Authorize the single configured Wajz operator."""
+    user = get_current_user(credentials, db)
+    settings = get_settings()
+    if user.email.strip().lower() != settings.admin_owner_email.strip().lower():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Owner authorization required")
+    if settings.admin_require_mfa:
+        try:
+            payload = _decode_token(credentials.credentials if credentials else "")
+        except jwt.PyJWTError:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
+        if payload.get("aal") != "aal2":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "MFA verification required")
+    request.state.admin_actor = user
     return user
-
-
-def require_role(minimum_role: str):
-    def dependency(user: User = Depends(require_admin)) -> User:
-        if ROLE_LEVEL[user.admin_role or "viewer"] < ROLE_LEVEL[minimum_role]:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                f"{minimum_role} role required",
-            )
-        return user
-
-    return dependency

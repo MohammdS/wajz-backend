@@ -18,6 +18,8 @@ from app.services.clustering import (
     find_matching_story,
 )
 from app.services.translations import generate_story_translations
+from app.services.operational_settings import get_runtime_controls
+from app.services.ongoing_topic_matching import auto_attach_story_to_topics
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +120,8 @@ def refresh_story_synthesis(db: Session, story: Story) -> None:
     story.confidence_label = compute_confidence_label(db, story)
     if len(articles) < 2:
         db.commit()
-        generate_story_translations(db, story, get_provider())
+        if get_runtime_controls(db).translations_enabled:
+            generate_story_translations(db, story, get_provider())
         return
 
     provider = get_provider()
@@ -150,7 +153,8 @@ def refresh_story_synthesis(db: Session, story: Story) -> None:
             article.status = "summarized"
         _finish_run(run, "success")
         db.commit()
-        generate_story_translations(db, story, provider)
+        if get_runtime_controls(db).translations_enabled:
+            generate_story_translations(db, story, provider)
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         failed_run = _record_run(db, "story_synthesis", "story", story.id, provider.model_name)
@@ -190,6 +194,8 @@ def process_pending_articles(
         story = db.get(Story, story_id)
         if story is not None:
             refresh_story_synthesis(db, story)
+            if get_runtime_controls(db).ongoing_auto_attach_enabled:
+                auto_attach_story_to_topics(db, story)
 
     if failed:
         dispatch_alert(

@@ -15,16 +15,12 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_publishable_key: str = ""
     supabase_audience: str = "authenticated"
-    # Legacy-only. Production verification uses JWKS or the Supabase Auth API.
-    supabase_jwt_secret: str = ""
     token_expiry_hours: int = 24 * 30
+    admin_owner_email: str = "owner@wajz.app"
+    admin_require_mfa: bool = False
+    admin_origin: str = "http://127.0.0.1:4173"
 
-    # Admin
-    admin_emails: str = "admin@wajz.app"
-    cors_origins: str = (
-        "http://127.0.0.1:3000,http://localhost:3000,"
-        "http://127.0.0.1:3002,http://localhost:3002"
-    )
+    cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
 
     # Observability. All external exporters are opt-in.
     environment: str = "development"
@@ -35,14 +31,6 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     alert_webhook_url: str = ""
     alert_webhook_token: str = ""
-
-    @property
-    def bootstrap_admin_emails(self) -> set[str]:
-        return {
-            email.strip().lower()
-            for email in self.admin_emails.split(",")
-            if email.strip()
-        }
 
     # AI
     ai_provider: str = "auto"  # auto | anthropic | gemini | zai | heuristic
@@ -59,27 +47,39 @@ class Settings(BaseSettings):
 
     @property
     def supported_content_languages(self) -> list[str]:
-        return list(dict.fromkeys(
-            language.strip().lower()
-            for language in self.content_languages.split(",")
-            if language.strip()
-        ))
+        return list(
+            dict.fromkeys(
+                language.strip().lower()
+                for language in self.content_languages.split(",")
+                if language.strip()
+            )
+        )
 
     @property
     def supported_translation_languages(self) -> list[str]:
         content_languages = set(self.supported_content_languages)
-        return list(dict.fromkeys(
-            language.strip().lower()
-            for language in self.translation_languages.split(",")
-            if language.strip().lower() in content_languages
-        ))
+        return list(
+            dict.fromkeys(
+                language.strip().lower()
+                for language in self.translation_languages.split(",")
+                if language.strip().lower() in content_languages
+            )
+        )
 
     # Worker
     ingestion_interval_minutes: int = 30
+    admin_job_poll_seconds: int = 5
+
+    # Privacy and first-party analytics
+    privacy_policy_version: str = "2026-08-13"
+    analytics_raw_retention_days: int = 90
+    analytics_aggregate_retention_days: int = 396
 
     # Rate limiting
     rate_limit_public: int = 120
     rate_limit_auth: int = 20
+    rate_limit_admin: int = 120
+    rate_limit_analytics: int = 240
     rate_limit_window_seconds: int = 60
 
     # Clustering
@@ -107,16 +107,17 @@ class Settings(BaseSettings):
 
         def is_placeholder(value: str) -> bool:
             normalized = value.strip().lower()
-            return not normalized or any(
-                marker in normalized for marker in placeholder_markers
-            )
+            return not normalized or any(marker in normalized for marker in placeholder_markers)
 
         if self.auth_mode != "supabase":
             errors.append("AUTH_MODE must be supabase")
-        if (
-            not self.supabase_url.startswith("https://")
-            or is_placeholder(self.supabase_url)
-        ):
+        if not self.admin_owner_email or "@" not in self.admin_owner_email:
+            errors.append("ADMIN_OWNER_EMAIL must be a valid owner email")
+        if not self.admin_require_mfa:
+            errors.append("ADMIN_REQUIRE_MFA must be true")
+        if not self.admin_origin.startswith("https://") or is_placeholder(self.admin_origin):
+            errors.append("ADMIN_ORIGIN must be a real HTTPS origin")
+        if not self.supabase_url.startswith("https://") or is_placeholder(self.supabase_url):
             errors.append("SUPABASE_URL must be a real HTTPS project URL")
         if is_placeholder(self.supabase_publishable_key):
             errors.append("SUPABASE_PUBLISHABLE_KEY must be replaced")
@@ -124,22 +125,13 @@ class Settings(BaseSettings):
             errors.append("DATABASE_URL must use a production database")
         if len(self.secret_key) < 32 or is_placeholder(self.secret_key):
             errors.append("SECRET_KEY must be a unique value of at least 32 characters")
-        origins = [
-            origin.strip()
-            for origin in self.cors_origins.split(",")
-            if origin.strip()
-        ]
+        origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
         if not origins or any(
-            not origin.startswith("https://") or is_placeholder(origin)
-            for origin in origins
+            not origin.startswith("https://") or is_placeholder(origin) for origin in origins
         ):
             errors.append("CORS_ORIGINS must contain only real HTTPS origins")
-        if (
-            not self.bootstrap_admin_emails
-            or self.bootstrap_admin_emails == {"admin@wajz.app"}
-            or any(is_placeholder(email) for email in self.bootstrap_admin_emails)
-        ):
-            errors.append("ADMIN_EMAILS must contain a real bootstrap administrator")
+        elif self.admin_origin not in origins:
+            errors.append("CORS_ORIGINS must include ADMIN_ORIGIN")
         if is_placeholder(self.metrics_token):
             errors.append("METRICS_TOKEN must be replaced")
         if "ar" not in self.supported_content_languages:
@@ -153,9 +145,7 @@ class Settings(BaseSettings):
         if self.ai_provider == "zai" and is_placeholder(self.zai_api_key):
             errors.append("ZAI_API_KEY must be replaced")
         if errors:
-            raise RuntimeError(
-                "Invalid production configuration: " + "; ".join(errors)
-            )
+            raise RuntimeError("Invalid production configuration: " + "; ".join(errors))
 
 
 @lru_cache

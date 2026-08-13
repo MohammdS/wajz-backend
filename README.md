@@ -14,8 +14,7 @@ Flutter clients -> HTTPS/Caddy -> FastAPI -> PostgreSQL
 ```
 
 The periodic worker runs RSS ingestion, article analysis, story synthesis, and
-translation directly. Admin-triggered processing and News Studio operations
-run synchronously.
+translation directly.
 
 Only `published` stories are public, eligible for saved-story reads, or added
 to briefings. Seed data is isolated to the demo records created by the seeder.
@@ -42,6 +41,21 @@ uvicorn app.main:app --reload
 python -m app.worker
 ```
 
+## Local demo
+
+From the backend directory, run:
+
+```powershell
+.\scripts\demo.ps1
+```
+
+The command backs up the local `wajz.db`, recreates it from migrations, seeds
+bilingual stories and a published Ongoing topic, builds the consumer web app,
+and serves the API at `http://127.0.0.1:8000` and the app at
+`http://127.0.0.1:3000`. It uses development authentication and heuristic AI;
+the periodic worker is intentionally not started. Press Ctrl+C to stop only the
+two processes created by the command.
+
 ## Authentication
 
 - `AUTH_MODE=dev` exposes `/auth/dev-login` for explicit local development.
@@ -50,9 +64,6 @@ python -m app.worker
   fail immediately instead of remaining active until token expiry.
 - Wajz users are keyed by the stable Supabase subject, not a mutable email.
 - Locally disabled Wajz accounts are rejected after identity verification.
-- Admin APIs require a bearer token and a database-backed `viewer`, `editor`,
-  or `super_admin` role. UI visibility never substitutes for API authorization.
-
 The consumer client supports guests; authentication is required only for
 account-scoped features such as preferences, saved stories, and briefings.
 

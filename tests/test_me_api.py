@@ -94,9 +94,7 @@ def test_opened_briefing_stories_are_tracked_per_user(client, auth_headers, demo
     response = client.post(f"/me/stories/{story_id}/opened", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == {"opened": True, "story_id": story_id}
-    assert client.post(
-        f"/me/stories/{story_id}/opened", headers=auth_headers
-    ).status_code == 200
+    assert client.post(f"/me/stories/{story_id}/opened", headers=auth_headers).status_code == 200
 
     refreshed = client.get("/me/briefing/today", headers=auth_headers).json()
     assert refreshed["opened_story_ids"] == [story_id]
@@ -182,34 +180,41 @@ def test_archived_story_is_hidden_but_can_be_unsaved(
     db,
 ):
     story_id = client.get("/stories").json()["items"][0]["id"]
-    assert client.post(
-        f"/me/saved-stories/{story_id}",
-        headers=auth_headers,
-    ).status_code == 201
+    assert (
+        client.post(
+            f"/me/saved-stories/{story_id}",
+            headers=auth_headers,
+        ).status_code
+        == 201
+    )
 
     story = db.get(Story, story_id)
     story.status = "archived"
     db.commit()
 
     assert client.get("/me/saved-stories", headers=auth_headers).json() == []
-    assert client.post(
-        f"/me/saved-stories/{story_id}",
-        headers=auth_headers,
-    ).status_code == 404
-    assert client.post(
-        f"/me/stories/{story_id}/opened",
-        headers=auth_headers,
-    ).status_code == 404
-    assert client.delete(
-        f"/me/saved-stories/{story_id}",
-        headers=auth_headers,
-    ).status_code == 200
     assert (
-        db.query(SavedStory)
-        .filter(SavedStory.story_id == story_id)
-        .first()
-        is None
+        client.post(
+            f"/me/saved-stories/{story_id}",
+            headers=auth_headers,
+        ).status_code
+        == 404
     )
+    assert (
+        client.post(
+            f"/me/stories/{story_id}/opened",
+            headers=auth_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.delete(
+            f"/me/saved-stories/{story_id}",
+            headers=auth_headers,
+        ).status_code
+        == 200
+    )
+    assert db.query(SavedStory).filter(SavedStory.story_id == story_id).first() is None
 
 
 def test_briefing_rebuilds_after_story_is_archived(

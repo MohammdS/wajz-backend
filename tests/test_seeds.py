@@ -36,8 +36,6 @@ def test_demo_seed_does_not_process_or_publish_unrelated_content(db):
     }
     assert demo_story_ids
     assert (
-        db.query(Story)
-        .filter(Story.id.in_(demo_story_ids), Story.status != "published")
-        .count()
+        db.query(Story).filter(Story.id.in_(demo_story_ids), Story.status != "published").count()
         == 0
     )

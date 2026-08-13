@@ -5,9 +5,7 @@ from app.services.clustering import create_story_from_article
 def test_pipeline_clusters_same_event(demo_data):
     """The three EU AI rules articles must merge into a single story."""
     db = demo_data
-    eu_articles = (
-        db.query(Article).filter(Article.url.like("%eu-ai-rules%")).all()
-    )
+    eu_articles = db.query(Article).filter(Article.url.like("%eu-ai-rules%")).all()
     assert len(eu_articles) == 3
     story_ids = set()
     for article in eu_articles:
